@@ -61,7 +61,7 @@ _PROMPT_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,32}$")
 _TRUTHY = {"1", "true", "yes", "on"}
 _FALSY = {"0", "false", "no", "off"}
 
-_SLACK = Platform.SLACK.value
+_SLACK = "slack"  # connector-side platform id; the Slack channel plugin was cut (Telegram only)
 
 # Prompt option id -> in-channel ack label (the option set doubles as the choice allowlist).
 _EXEC_APPROVAL_LABELS = {

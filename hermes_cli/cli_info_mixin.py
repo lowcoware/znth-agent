@@ -537,10 +537,7 @@ class CLIInfoMixin:
             print(f"  {t('cli.gateway_status.platform_config_header')}")
             print("  " + "-" * 55)
             platform_status = {
-                Platform.TELEGRAM: ("Telegram", "TELEGRAM_BOT_TOKEN"),
-                Platform.DISCORD: ("Discord", "DISCORD_BOT_TOKEN"),
-                Platform.SLACK: ("Slack", "SLACK_BOT_TOKEN"),
-                Platform.WHATSAPP: ("WhatsApp", "WHATSAPP_ENABLED")}
+                Platform.TELEGRAM: ("Telegram", "TELEGRAM_BOT_TOKEN")}
             for platform, (name, env_var) in platform_status.items():
                 pconfig = config.platforms.get(platform)
                 if pconfig and pconfig.enabled:

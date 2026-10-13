@@ -219,7 +219,7 @@ def _event_from_wire(raw: dict[str, Any]) -> MessageEvent:
         msg_type = MessageType.TEXT
 
     text = raw.get("text", "")
-    if platform_enum == Platform.SLACK:
+    if getattr(platform_enum, "value", platform_enum) == "slack":
         # Slack slash text arrives over the relay bypassing the native command
         # callback; normalize at the wire boundary so adapter gates see the real
         # gateway command rather than the legacy `hermes` parent name.
