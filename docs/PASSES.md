@@ -232,3 +232,54 @@ python3 scripts/znth/strict_import_check.py --root /root/znth-agent \
 
 **Хвост:** страница подписки (`hermes_cli/nous_subscription.py`) всё ещё перечисляет покрытие по web и браузеру, хотя маршрута за ними больше нет, а в мастере соответствующие строки уже убраны. Снять эти строки вместе с остальной механизмом подписки — когда очередь дойдёт до image_gen/video_gen/tts, там же лежат их строки.
 
+### Проход 3a — каналы-плагины: только Telegram. СДЕЛАНО (2026-10-13)
+
+Решение владельца: «Резать все 20 — только Telegram».
+
+**Срезано:** `plugins/platforms/{a2a, buzz, dingtalk, discord, email, feishu, google_chat, irc, line,
+matrix, mattermost, ntfy, photon, raft, simplex, slack, sms, teams, wecom, whatsapp}` и
+`plugins/teams_pipeline` — 114 файлов, −52 309 строк. `plugins/platforms/telegram` остался целиком.
+
+**Швы:** `tools/send_message_senders.py` — снят matrix-отправитель; `tools/send_message_tool.py` — из
+`_CHUNKED_ROUTES`/`_TEXT_SENDERS`/примечания убраны снятые каналы, снят discord/whatsapp-спецпуть;
+`hermes_cli/gateway_setup_wizard.py` — убран блок mattermost (у него не было корневого адаптера);
+`hermes_cli/cli_info_mixin.py` — в статусе гейтвея осталась строка Telegram;
+`gateway/relay/{adapter,ws_transport}.py` — сравнения со Slack-членом переведены на сравнение значения.
+
+**Возврат, а не защита сделанного:** я сначала срезала и члены перечисления `Platform` (DISCORD, SLACK,
+MATRIX, MATTERMOST и др.) — это сломало бы всю обвязку гейтвея (более ста ссылок, часть на уровне
+модуля: `config_env`, `authz_mixin`, `session`). Перечисление восстановлено целиком. Вывод: каталог
+адаптера — единица удаления, список имён — нет.
+
+**Проверено:** строгий импорт 14 модулей обвязки; в реестре платформ только `telegram`, снятых имён
+нет; мастер показывает `[signal, weixin, bluebubbles, qqbot, yuanbao, telegram]` — строки снятых
+каналов исчезли сами (приходили из манифестов плагинов).
+
+### Проход 3c — корневые адаптеры каналов. СДЕЛАНО (2026-10-13)
+
+Решение владельца: «Резать и корневые адаптеры — остаётся только Telegram».
+
+**Срезано:** `gateway/platforms/{signal, signal_format, signal_rate_limit, bluebubbles, weixin,
+whatsapp_cloud, whatsapp_common, yuanbao, yuanbao_media, yuanbao_proto, yuanbao_sticker,
+msgraph_webhook}.py` и каталог `qqbot/`; `tools/yuanbao_tools.py`; `hermes_cli/main_platform_setup.py`;
+`hermes_cli/subcommands/{whatsapp,slack}.py`; `scripts/whatsapp-bridge/`. Вместе со снятыми каналами
+ушли подкоманды `hermes whatsapp`, `hermes whatsapp-cloud`, `hermes slack`.
+
+**Швы:** `tools/send_message_senders.py` (810 → 358 строк) — сняты `_send_signal`, `_send_weixin`,
+`_send_bluebubbles`, `_send_qqbot` с хелперами, `_send_yuanbao`, `_resolve_slack_user_target`,
+`_signal_send_batch`, `_gateway_platform_module`; `tools/send_message_tool.py` — `_CHUNKED_ROUTES`,
+`_TEXT_SENDERS`, `_PLUGIN_STANDALONE_MEDIA` обнулены с маркерами «чем оживают», сняты ветки
+weixin/qqbot/slack, `_weixin_env_pconfig`, `_slack_dm_chat_id`, signal-особый случай в
+`_platform_max_length`; `hermes_cli/doctor_tools.py` — убран аудит WhatsApp-моста; `hermes_cli/main.py`
+— импорт и регистрация трёх подкоманд; `hermes_cli/console_engine.py` — строка подкоманды slack.
+
+**Проверено:** строгий импорт 12 модулей (все внутри форка, включая `hermes_cli.main`); **живой старт
+CLI** из форка — exit 0, 230 строк справки, ноль упоминаний whatsapp/slack.
+Не проверено: живой прогон гейтвея с Telegram.
+
+**Хвост (pass 3b):** статические списки имён всё ещё называют снятые каналы — члены `Platform`,
+таблицы `gateway/config_env.py`, карта allow-bots в `authz_mixin.py`, заметки `session.py`, списки
+`run.py`, `hermes_cli/platforms.py`, `web_server_messaging.py`, `web_server_gateway.py`, мёртвый
+`setup_whatsapp_cloud.py`, `plugin-catalog/hermes-discord-rpc.yaml`, доки и тесты. Адаптера за ними
+нет, поэтому функционально инертны, но выглядят как живые.
+
