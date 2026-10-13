@@ -177,6 +177,10 @@ def _event_from_wire(raw: dict[str, Any]) -> MessageEvent:
     src = raw.get("source", {}) or {}
     from gateway.config import Platform
 
+    # The connector sends its own platform id (``slack``, ``whatsapp``, …). Ids this build still
+    # ships resolve to their member; an id whose channel was cut (Slack, WhatsApp, Signal, …) has no
+    # member left, and by this module's contract an unknown platform falls back to RELAY — the lane
+    # is then keyed as a relay lane, which is the honest state of a channel we no longer ship.
     try:
         platform_enum = Platform(src.get("platform", "relay"))
     except ValueError:

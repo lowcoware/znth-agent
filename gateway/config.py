@@ -251,6 +251,21 @@ class Platform(Enum):
         return cls._add_pseudo_member(value) if registered else None
 
     @classmethod
+    def from_relay_id(cls, value: str) -> "Platform":
+        """Platform for a relay lane id — the connector's own platform string (``slack``,
+        ``whatsapp``, …), including ids of platforms this build no longer ships natively.
+
+        The enum gate in ``_missing_`` stays as it is (no pollution from arbitrary input): a lane id
+        is resolved here explicitly by the relay, which owns that id space. Lane identity is
+        load-bearing — dedupe keys, session keys and the connector's send path are all built from
+        ``platform.value``, so collapsing an unknown id into ``Platform.RELAY`` would merge lanes.
+        """
+        key = (value or "").strip().lower()
+        if not key:
+            return cls.RELAY
+        return cls._value2member_map_.get(key) or cls._add_pseudo_member(key)
+
+    @classmethod
     def _add_pseudo_member(cls, value: str) -> "Platform":
         pseudo = object.__new__(cls)
         pseudo._value_ = value

@@ -162,7 +162,7 @@ async def test_stop_typing_forwards_explicit_clear_with_routing_context():
     t = _CaptureTransport()
     a = RelayAdapter(PlatformConfig(), make_desc(platform="slack"), transport=t)
     event = _make_event(chat_id="channel-1", scope_id="workspace-1")
-    event.source.platform = Platform.SLACK
+    event.source.platform = Platform.from_relay_id("slack")
     a._capture_scope(event)
 
     await a.stop_typing("channel-1", metadata={"thread_id": "thread-1"})

@@ -65,7 +65,7 @@ def _mark_slack_chat(a, chat_id="chan-1"):
     from gateway.session import SessionSource
 
     src = SessionSource(
-        platform=Platform.SLACK, chat_id=chat_id, chat_type="channel", scope_id="w-1"
+        platform=Platform.from_relay_id("slack"), chat_id=chat_id, chat_type="channel", scope_id="w-1"
     )
     ev = MessageEvent(text="hi", source=src, message_type=MessageType.TEXT)
     a._capture_scope(ev)

@@ -85,7 +85,7 @@ class TestInboundReplayDedupe:
         # top-level chat_id — a shape no production code path produces — and
         # green-lit a dedupe key that read the wrong field.)
         source = SessionSource(
-            platform=Platform.SLACK,
+            platform=Platform.from_relay_id("slack"),
             chat_id=chat_id,
             chat_type="channel",
             user_id="U1",
@@ -211,7 +211,7 @@ class TestDedupeKeyPlatformNormalization:
         return adapter._inbound_dedupe_key(event)
 
     def test_enum_and_string_spellings_produce_one_key(self):
-        assert self._key(Platform.SLACK) == self._key("slack")
+        assert self._key(Platform.from_relay_id("slack")) == self._key("slack")
 
     def test_distinct_string_platforms_stay_distinct(self):
         assert self._key("slack") != self._key("discord")

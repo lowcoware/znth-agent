@@ -307,7 +307,7 @@ async def test_telegram_ack_uses_an_emoji_telegram_actually_allows(outcome, expe
 async def test_free_form_reaction_platforms_keep_the_check_mark():
     """Slack/Discord/Matrix/Signal take arbitrary emoji — they must NOT be
     dragged down to Telegram's vocabulary."""
-    for platform in (Platform.SLACK, Platform.DISCORD, Platform.MATRIX, Platform.SIGNAL):
+    for platform in (Platform.from_relay_id("slack"), Platform.DISCORD, Platform.MATRIX, Platform.from_relay_id("signal")):
         adapter, stub = _adapter()
         event = _reactable_event(platform=platform)
         await adapter.on_processing_complete(event, ProcessingOutcome.SUCCESS)
