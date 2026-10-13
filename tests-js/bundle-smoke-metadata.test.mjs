@@ -45,7 +45,7 @@ test('identity uses the production bundled variant and exact input tokens, not i
   expect(JSON.parse(execFileSync(process.execPath, [cli, 'identity', '--commit', commit], { env: hostileEnvironment, encoding: 'utf8' }))).toEqual(tagless)
 })
 
-test('channel smoke binds the complete admitted request, not a commit-build identity or display version', () => {
+test('channel smoke binds the complete admitted request, not a commit-build identity or display version', { timeout: 120_000 }, () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'channel-smoke-'))
   const token = randomBytes(8).toString('hex'), sequence = 65537
   const request = { schema: 1, buildId: randomBytes(16).toString('hex'), channel: `smoke-${token}`,

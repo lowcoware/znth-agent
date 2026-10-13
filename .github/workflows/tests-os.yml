@@ -92,7 +92,11 @@ jobs:
             runner: windows-latest
             marker: windows
           - name: Windows-only tests (arm64)
-            runner: windows-latest
+            # The bootstrap picks ARM64 from the host arch, so this leg needs a real
+            # arm64 runner: the older ``windows-latest`` here was an x64 image and the
+            # lane failed on its own arch assertion.
+            # impulse: standard arm64 label, drop the leg if the repo never gets it.
+            runner: windows-11-arm
             marker: windows
             timeout: 60
     steps:
