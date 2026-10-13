@@ -20,7 +20,6 @@ from gateway.config import Platform
 from gateway.platforms.base import EphemeralReply
 from gateway.platforms.event import MessageEvent, MessageType
 from gateway.session import SessionSource
-from gateway.whatsapp_identity import canonical_whatsapp_identifier
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
@@ -1149,10 +1148,6 @@ class GatewayBusySessionMixin:
         chat_id = str(getattr(source, "chat_id", None) or "")
         if not chat_id:
             return []
-        if source.chat_type == "dm" and source.platform == Platform.WHATSAPP:
-            # Match the same text build_session_key keyed: WhatsApp DM chat ids are canonicalised
-            # there, so a raw JID/LID alias would never line up with the stored key.
-            chat_id = canonical_whatsapp_identifier(chat_id) or chat_id
         namespace = ":".join(own_key.split(":", 2)[:2])
         prefix = f"{namespace}:{source.platform.value}:"
         scope_id = str(getattr(source, "scope_id", None) or "") or None

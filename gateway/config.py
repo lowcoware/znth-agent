@@ -220,25 +220,9 @@ class Platform(Enum):
     LOCAL = "local"
     TELEGRAM = "telegram"
     DISCORD = "discord"
-    WHATSAPP = "whatsapp"
-    WHATSAPP_CLOUD = "whatsapp_cloud"
-    SLACK = "slack"
-    SIGNAL = "signal"
-    MATTERMOST = "mattermost"
-    MATRIX = "matrix"
-    EMAIL = "email"
-    SMS = "sms"
-    DINGTALK = "dingtalk"
     API_SERVER = "api_server"
     WEBHOOK = "webhook"
-    MSGRAPH_WEBHOOK = "msgraph_webhook"
-    FEISHU = "feishu"
-    WECOM = "wecom"
-    WECOM_CALLBACK = "wecom_callback"
-    WEIXIN = "weixin"
-    BLUEBUBBLES = "bluebubbles"
-    QQBOT = "qqbot"
-    YUANBAO = "yuanbao"
+    MATRIX = "matrix"
     RELAY = "relay"  # generic relay adapter fronted by the connector (EXPERIMENTAL)
 
     @classmethod
@@ -397,11 +381,6 @@ class ChannelOverride:
 # api_key-only) and must never be skipped for a missing token. See #64674.
 PLATFORM_TOKEN_ENV_NAMES: dict[Platform, str] = {
     Platform.TELEGRAM: "TELEGRAM_BOT_TOKEN",
-    Platform.DISCORD: "DISCORD_BOT_TOKEN",
-    Platform.SLACK: "SLACK_BOT_TOKEN",
-    Platform.MATTERMOST: "MATTERMOST_TOKEN",
-    Platform.MATRIX: "MATRIX_ACCESS_TOKEN",
-    Platform.WEIXIN: "WEIXIN_TOKEN",
 }
 
 
@@ -560,15 +539,8 @@ def _needs_extra(*keys: str) -> Callable[[PlatformConfig], bool]:
 # Built-in "sufficiently configured?" checks; platforms covered by the generic
 # ``token or api_key`` check (Telegram, Discord, Slack, Matrix, ...) need no entry.
 _PLATFORM_CONNECTED_CHECKERS: dict[Platform, Callable[[PlatformConfig], bool]] = {
-    Platform.WEIXIN: lambda cfg: bool(cfg.extra.get("account_id") and (cfg.token or cfg.extra.get("token"))),
-    Platform.WHATSAPP_CLOUD: _needs_extra("phone_number_id", "access_token"),
-    Platform.SIGNAL: _needs_extra("http_url"),
     Platform.API_SERVER: lambda cfg: _has_usable_api_server_key(cfg.extra.get("key") if cfg else None),
     Platform.WEBHOOK: lambda cfg: True,
-    Platform.MSGRAPH_WEBHOOK: lambda cfg: bool(str(cfg.extra.get("client_state") or "").strip()),
-    Platform.BLUEBUBBLES: _needs_extra("server_url", "password"),
-    Platform.QQBOT: _needs_extra("app_id", "client_secret"),
-    Platform.YUANBAO: _needs_extra("app_id", "app_secret"),
     # Relay dials OUT: "connected" once an endpoint URL is configured. EXPERIMENTAL.
     Platform.RELAY: lambda cfg: bool(cfg.extra.get("relay_url") or cfg.extra.get("url")),
 }
@@ -664,9 +636,6 @@ class GatewayConfig:
 
     def _is_platform_connected(self, platform: Platform, config: PlatformConfig) -> bool:
         checker = _PLATFORM_CONNECTED_CHECKERS.get(platform)
-        # Weixin needs token AND account_id, so it must bypass the generic token branch.
-        if platform == Platform.WEIXIN:
-            return checker(config)
         if config.token or config.api_key:
             return True
         if checker is not None:
@@ -828,7 +797,7 @@ class GatewayConfig:
         choice = self._extra_choice(platform, "unauthorized_dm_behavior", UNAUTHORIZED_DM_BEHAVIORS, self.unauthorized_dm_behavior)
         if choice is not None:
             return choice
-        return "ignore" if platform == Platform.EMAIL else self.unauthorized_dm_behavior
+        return self.unauthorized_dm_behavior
 
     def get_notice_delivery(self, platform: Optional[Platform] = None) -> str:
         """Effective notice-delivery mode ("public"/"private") for a platform."""

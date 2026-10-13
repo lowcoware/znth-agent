@@ -161,9 +161,7 @@ def _home_thread_from_source(source) -> Optional[str]:
     thread_id = getattr(source, "thread_id", None)
     if not thread_id:
         return None
-    synthetic = (getattr(source, "platform", None) == Platform.SLACK and getattr(source, "message_id", None)
-                 and str(thread_id) == str(source.message_id))
-    return None if synthetic else str(thread_id)
+    return str(thread_id)
 
 
 class GatewaySlashCommandsMixin(

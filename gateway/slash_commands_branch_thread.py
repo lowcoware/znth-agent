@@ -15,7 +15,7 @@ from gateway.config import Platform
 from gateway.session import SessionSource
 
 # Adapters that override ``BasePlatformAdapter.create_handoff_thread`` (the base returns None).
-BRANCH_THREAD_PLATFORMS = frozenset({Platform.DISCORD, Platform.TELEGRAM, Platform.SLACK, Platform.MATRIX})
+BRANCH_THREAD_PLATFORMS = frozenset({Platform.TELEGRAM})
 BRANCH_HERE_FLAG = "--here"
 
 

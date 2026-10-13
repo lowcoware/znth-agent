@@ -1190,9 +1190,6 @@ def _slack_ignored_channels_from_gateway_config(config: Any, adapter: Any = None
     raw = None
     if adapter is not None:
         raw = (getattr(getattr(adapter, "config", None), "extra", None) or {}).get("ignored_channels")
-    platform_cfg = getattr(config, "platforms", {}).get(Platform.SLACK)
-    if raw is None and platform_cfg is not None and adapter is None:
-        raw = getattr(platform_cfg, "extra", {}).get("ignored_channels")
     if raw is None:
         # Top-level ``slack.ignored_channels`` arrives via the plugin's YAML→env bridge, not PlatformConfig.extra
         # (#46925); scoped read so a secondary never inherits the default profile's list (first-writer env).
@@ -1902,11 +1899,6 @@ def _platform_has_bot_credential(platform: "Platform", platform_config: "Platfor
     """Return True when a token-authenticated platform has a usable bot credential; platforms not using
     ``PlatformConfig.token`` (Signal session paths, port-binding HTTP adapters) always return True."""
     from gateway.config import PLATFORM_TOKEN_ENV_NAMES, Platform
-    if platform is Platform.WHATSAPP:
-        from hermes_constants import get_hermes_dir
-        session = Path(platform_config.extra.get(
-            "session_path", get_hermes_dir("platforms/whatsapp/session", "whatsapp/session")))
-        return (session / "creds.json").exists()
     if platform not in PLATFORM_TOKEN_ENV_NAMES:
         return True
     for attr in ("token", "api_key"):  # some adapters accept api_key as the primary credential
@@ -1922,10 +1914,7 @@ def _platform_has_bot_credential(platform: "Platform", platform_config: "Platfor
     # build_config() already copies all three env vars onto extra, and importing this module loads
     # ~/.hermes/.env, so an env fallback would report "has credential" for every Matrix config on the box —
     # including the empty-primary multiplex case (#64674) this check exists to evict.
-    if platform is not Platform.MATRIX:
-        return False
-    extra = getattr(platform_config, "extra", None) or {}
-    return all(str(extra.get(key) or "").strip() for key in ("homeserver", "user_id", "password"))
+    return False
 
 
 _DOCKER_VOLUME_SPEC_RE = re.compile(r"^(?P<host>.+):(?P<container>/[^:]+?)(?::(?P<options>[^:]+))?$")
@@ -2216,12 +2205,9 @@ def _best_effort(fn: Callable[[], Any], debug_msg: Optional[str] = None) -> Any:
 _EXECUTOR_QUIESCE_TIMEOUT = 2.0
 
 
-_OWN_POLICY_OPEN_ENV = {
-    Platform.WECOM: ("WECOM_DM_POLICY", "WECOM_GROUP_POLICY", "WECOM_ALLOW_ALL_USERS"),
-    Platform.WEIXIN: ("WEIXIN_DM_POLICY", "WEIXIN_GROUP_POLICY", "WEIXIN_ALLOW_ALL_USERS"),
-    Platform.YUANBAO: ("YUANBAO_DM_POLICY", "YUANBAO_GROUP_POLICY", "YUANBAO_ALLOW_ALL_USERS"),
-    Platform.QQBOT: (None, None, "QQ_ALLOW_ALL_USERS"),
-    Platform.WHATSAPP: ("WHATSAPP_DM_POLICY", "WHATSAPP_GROUP_POLICY", "WHATSAPP_ALLOW_ALL_USERS")}
+# Rows here were per-platform (WeCom, Weixin, Yuanbao, QQBot, WhatsApp) policy env triples; every
+# one belonged to a cut channel (docs/DECISIONS.md). A channel plugged back in re-adds its row.
+_OWN_POLICY_OPEN_ENV: dict = {}
 
 
 def _own_policy_open_startup_violation(config) -> Optional[str]:
@@ -2851,12 +2837,6 @@ def _platform_config_key(platform: Platform) -> str:
     return "cli" if platform == Platform.LOCAL else platform.value
 
 
-def _teams_pipeline_plugin_enabled() -> bool:
-    """Return True when the standalone Teams pipeline plugin is enabled."""
-    enabled = cfg_get(_load_gateway_config(), "plugins", "enabled", default=[])
-    return isinstance(enabled, list) and ("teams_pipeline" in enabled or "teams-pipeline" in enabled)
-
-
 def _gateway_config_home() -> Path:
     """Return the Hermes home that gateway config reads should use."""
     override = get_hermes_home_override()
@@ -3312,24 +3292,11 @@ def _builtin_adapter_import(module: str, adapter_name: str, requirement: str):
 
 # platform -> (module, adapter class, requirements probe, warning on probe failure).
 _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
-    Platform.WHATSAPP_CLOUD: ("whatsapp_cloud", "WhatsAppCloudAdapter", "check_whatsapp_cloud_requirements",
-                              "WhatsApp Cloud: aiohttp/httpx missing — reinstall hermes-agent"),
-    Platform.SIGNAL: ("signal", "SignalAdapter", "check_signal_requirements",
-                      "Signal: runtime requirements not met"),
-    Platform.WEIXIN: ("weixin", "WeixinAdapter", "check_weixin_requirements",
-                      "Weixin: aiohttp/cryptography not installed"),
     Platform.API_SERVER: ("api_server", "APIServerAdapter", "check_api_server_requirements",
                           "API Server: aiohttp not installed"),
     Platform.WEBHOOK: ("webhook", "WebhookAdapter", "check_webhook_requirements",
                        "Webhook: aiohttp not installed"),
-    Platform.MSGRAPH_WEBHOOK: ("msgraph_webhook", "MSGraphWebhookAdapter", "check_msgraph_webhook_requirements",
-                               "MSGraph webhook: aiohttp not installed"),
-    Platform.BLUEBUBBLES: ("bluebubbles", "BlueBubblesAdapter", "check_bluebubbles_requirements",
-                           "BlueBubbles: aiohttp/httpx missing or BLUEBUBBLES_SERVER_URL/BLUEBUBBLES_PASSWORD not configured"),
-    Platform.QQBOT: ("qqbot", "QQAdapter", "check_qq_requirements",
-                     "QQBot: aiohttp/httpx missing or QQ_APP_ID/QQ_CLIENT_SECRET not configured"),
-    Platform.YUANBAO: ("yuanbao", "YuanbaoAdapter", "WEBSOCKETS_AVAILABLE",
-                       "Yuanbao: websockets not installed. Run: pip install websockets")}
+}
 
 
 def _instantiate_builtin_adapter(platform: Platform, config: Any) -> Optional[BasePlatformAdapter]:
@@ -3342,11 +3309,6 @@ def _instantiate_builtin_adapter(platform: Platform, config: Any) -> Optional[Ba
     if not (requirements_ok() if callable(requirements_ok) else requirements_ok):
         logger.warning(warning)
         return None
-    if platform == Platform.SIGNAL:
-        from gateway.platforms.signal import validate_signal_config
-        if not validate_signal_config(config):
-            logger.warning("Signal: SIGNAL_HTTP_URL or SIGNAL_ACCOUNT not configured")
-            return None
     return adapter_cls(config)
 
 
@@ -3804,29 +3766,6 @@ class GatewayRunner(
 
         self._session_db_handle_cache.close_all(_close)
 
-    def _wire_teams_pipeline_runtime(self) -> None:
-        """Bind the Teams meeting pipeline runtime to Graph webhook ingress (no-op if adapter/plugin off)."""
-        if Platform.MSGRAPH_WEBHOOK not in self.adapters:
-            return
-        if not _teams_pipeline_plugin_enabled():
-            logger.debug("Teams pipeline plugin is disabled; skipping runtime wiring")
-            return
-        try:
-            from plugins.teams_pipeline.runtime import bind_gateway_runtime
-        except Exception as exc:
-            logger.warning("Teams pipeline runtime import failed: %s", exc)
-            return
-        try:
-            bound = bind_gateway_runtime(self)
-        except Exception as exc:
-            logger.warning("Teams pipeline runtime wiring failed: %s", exc)
-            return
-        if bound:
-            logger.info("Teams pipeline runtime bound to msgraph webhook ingress")
-        elif self._teams_pipeline_runtime_error:
-            logger.warning(
-                "Teams pipeline runtime unavailable: %s", self._teams_pipeline_runtime_error)
-
     def _warn_if_docker_media_delivery_is_risky(self) -> None:
         """Warn when Docker-backed gateways lack an explicit export mount: MEDIA delivery runs in the
         gateway process, so model-emitted paths like `/output/report.txt` must be host-readable."""
@@ -4116,26 +4055,6 @@ class GatewayRunner(
             getattr(source, "platform", None), getattr(source, "chat_id", None),
             getattr(source, "thread_id", None), chat_type=getattr(source, "chat_type", None),
             reply_to_message_id=reply_to_message_id or getattr(source, "message_id", None))
-        if getattr(source, "platform", None) == Platform.SLACK:
-            # Per-turn egress identity: Slack chat.startStream needs recipient_user_id/team_id; the relay
-            # adapter's _with_scope fallback reads per-chat caches a CONCURRENT turn overwrites.
-            # Slack's chat.startStream requires recipient_user_id (+ recipient_team_id) when streaming to a
-            # channel, and the relay connector fills those from metadata.user_id / metadata.scope_id. The
-            # relay adapter's _with_scope fallback resolves BOTH from per-chat caches keyed only by chat_id
-            # — mutable state that a CONCURRENT turn overwrites: two users with overlapping turns in one
-            # channel would open U1's stream with U2 as the recipient. Stamp the authentic per-turn values
-            # from THIS turn's source here, where they are still turn-scoped; _with_scope only fills keys
-            # that are absent, so the cache degrades to what it should be — a restart/synthetic-send
-            # fallback. See #210.
-            team_id = getattr(source, "scope_id", None)
-            user_id = getattr(source, "user_id", None)
-            if team_id or user_id:
-                metadata = dict(metadata or {})
-                if team_id:
-                    metadata["slack_team_id"] = str(team_id)
-                    metadata.setdefault("scope_id", str(team_id))
-                if user_id:
-                    metadata.setdefault("user_id", str(user_id))
         from gateway.session_context import source_route_metadata
         metadata = source_route_metadata(source, metadata)
         # Routed profile for shared state.db namespaces: under profile_routes the transport adapter's
@@ -4164,9 +4083,6 @@ class GatewayRunner(
                 metadata["direct_messages_topic_id"] = tid
             if reply_to_message_id is not None:
                 metadata["telegram_reply_to_message_id"] = str(reply_to_message_id)
-        if platform == Platform.SLACK and reply_to_message_id is not None:
-            # Slack's reply_in_thread=false path uses message_id to tell real threads from synthetic keys.
-            metadata["message_id"] = str(reply_to_message_id)
         return metadata
 
     @staticmethod
@@ -4195,11 +4111,7 @@ class GatewayRunner(
 
     # Built-in platforms where ``/update`` is allowed (programmatic interfaces must not trigger updates).
     # Plugin-migrated platforms declare ``allow_update_command=True`` on their ``PlatformEntry`` instead.
-    _UPDATE_ALLOWED_PLATFORMS = frozenset({
-        Platform.TELEGRAM, Platform.SLACK, Platform.WHATSAPP, Platform.SIGNAL, Platform.MATRIX,
-        Platform.EMAIL, Platform.SMS, Platform.DINGTALK,
-        Platform.FEISHU, Platform.WECOM, Platform.WECOM_CALLBACK, Platform.WEIXIN, Platform.BLUEBUBBLES, Platform.QQBOT, Platform.LOCAL,
-    })
+    _UPDATE_ALLOWED_PLATFORMS = frozenset({Platform.TELEGRAM, Platform.LOCAL})
 
     def _set_session_env(self, context: SessionContext) -> list:
         """Set session context variables (contextvars, not os.environ, so concurrent messages can't

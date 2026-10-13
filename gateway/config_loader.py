@@ -198,7 +198,6 @@ def _str_keyed(value: Any) -> Any:
 
 
 _TELEGRAM = frozenset({Platform.TELEGRAM})
-_DISCORD_SLACK = frozenset({Platform.DISCORD, Platform.SLACK})
 
 def _plain(*keys: str) -> tuple:
     """Keys copied verbatim into ``extra`` for every platform."""
@@ -220,7 +219,7 @@ _SHARED_KEYS: tuple = (
         "dm_policy", "allow_from", "allow_admin_from", "user_allowed_commands",
         "group_policy", "group_allow_from", "group_allow_admin_from", "group_user_allowed_commands",
     ),
-    ("channel_skill_bindings", _DISCORD_SLACK, None),
+    ("channel_skill_bindings", _TELEGRAM, None),
     ("channel_prompts", None, _str_keyed),
     *_plain("gateway_restart_notification", "typing_indicator", "typing_status_text"),
 )
@@ -470,11 +469,6 @@ def bridge_core_env_settings(yaml_cfg: dict, platforms_data: dict) -> None:
     # WhatsApp settings → env vars: migrated to the whatsapp plugin's apply_yaml_config_fn hook
     # (plugins/platforms/whatsapp/adapter.py). #41112 / #3823.
     signal_cfg = yaml_cfg.get("signal", {})
-    if isinstance(signal_cfg, dict) and "require_mention" in signal_cfg:
-        sig_plat = platforms_data.setdefault(Platform.SIGNAL.value, {})
-        sig_plat.setdefault("extra", {}).setdefault("require_mention", signal_cfg["require_mention"])
-        if not skip_env_bridge and not os.getenv("SIGNAL_REQUIRE_MENTION"):
-            os.environ["SIGNAL_REQUIRE_MENTION"] = str(signal_cfg["require_mention"]).lower()
 
 
 def read_yaml_layers(home: Path) -> dict:

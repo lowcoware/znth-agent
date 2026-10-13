@@ -143,8 +143,6 @@ async def build_channel_directory(adapters: dict[Any, Any]) -> dict[str, Any]:
                     continue
             if platform == Platform.DISCORD:
                 platforms["discord"] = await asyncio.to_thread(_build_discord, adapter)
-            elif platform == Platform.SLACK:
-                platforms["slack"] = await _build_slack(adapter)
         except Exception as e:
             logger.warning("Channel directory: failed to build %s: %s", platform.value, e)
     # Platforms without channel enumeration get session-based discovery, but only when

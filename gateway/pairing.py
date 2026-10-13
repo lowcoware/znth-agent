@@ -66,15 +66,11 @@ def _default_pairing_dir() -> Path:
 # See #23778.
 _PLATFORM_ALLOWLIST_ENV = {
     "telegram": "TELEGRAM_ALLOWED_USERS", "discord": "DISCORD_ALLOWED_USERS",
-    "whatsapp": "WHATSAPP_ALLOWED_USERS", "whatsapp_cloud": "WHATSAPP_CLOUD_ALLOWED_USERS",
-    "slack": "SLACK_ALLOWED_USERS", "signal": "SIGNAL_ALLOWED_USERS",
-    "email": "EMAIL_ALLOWED_USERS", "sms": "SMS_ALLOWED_USERS",
-    "mattermost": "MATTERMOST_ALLOWED_USERS", "matrix": "MATRIX_ALLOWED_USERS",
-    "dingtalk": "DINGTALK_ALLOWED_USERS", "feishu": "FEISHU_ALLOWED_USERS",
-    "wecom": "WECOM_ALLOWED_USERS", "wecom_callback": "WECOM_CALLBACK_ALLOWED_USERS",
-    "weixin": "WEIXIN_ALLOWED_USERS", "bluebubbles": "BLUEBUBBLES_ALLOWED_USERS",
-    "qqbot": "QQ_ALLOWED_USERS", "yuanbao": "YUANBAO_ALLOWED_USERS",
+    "matrix": "MATRIX_ALLOWED_USERS",
 }
+# Rows for whatsapp, whatsapp_cloud, slack, signal, email, sms, mattermost, dingtalk, feishu, wecom,
+# wecom_callback, weixin, bluebubbles, qqbot and yuanbao were cut with their channels — a channel
+# plugged back in re-adds its row (docs/DECISIONS.md).
 
 
 def _allowlist_env_for_platform(platform: str) -> Optional[str]:

@@ -308,19 +308,6 @@ class GatewayStatusCommandsMixin:
                   t("gateway.status.agent_running", state=state)]
         if queue_depth:
             lines.append(t("gateway.status.queued", count=queue_depth))
-        if source.platform == Platform.MATRIX:
-            scope = getattr(self.adapters.get(Platform.MATRIX), "_matrix_session_scope",
-                            os.getenv("MATRIX_SESSION_SCOPE", "auto"))
-            lines += [
-                "",
-                t("gateway.status.matrix_scope_header"),
-                t("gateway.status.matrix_scope_room", room=source.chat_name or source.chat_id),
-                t("gateway.status.matrix_scope_room_id", room_id=source.chat_id),
-                t("gateway.status.matrix_scope_thread", thread_id=source.thread_id or t("gateway.shared.none_value")),
-                t("gateway.status.matrix_scope_mode", scope=scope),
-                t("gateway.status.matrix_scope_key",
-                  session_key=self._redact_matrix_session_key(session_key)),
-            ]
         lines += ["", t("gateway.status.platforms", platforms=', '.join(p.value for p in self.adapters))]
         return "\n".join(lines)
 

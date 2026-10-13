@@ -769,20 +769,7 @@ class GatewayAgentCacheMixin:
 
         discord_ids: tuple = ()
         discord_tools = ""
-        if src.platform == Platform.DISCORD:
-            from gateway.session import _discord_tools_loaded
-            discord_tools = "1" if _discord_tools_loaded() else "0"
-            # message_id is not rendered (value nor presence): it arrives per-turn in the user message.
-            discord_ids = (
-                _s(src.guild_id), _s(src.parent_chat_id), _s(src.thread_id), _s(src.chat_id),
-            )
-        # Slack's capability-aware platform note is gated on _slack_tools_loaded() — the gate state must
-        # be in the key (same parity contract as the Discord gate above) so a config / MCP-registration
-        # flip re-renders once instead of serving a stale pinned note for the rest of the session.
         slack_tools = ""
-        if src.platform == Platform.SLACK:
-            from gateway.session import _slack_tools_loaded
-            slack_tools = "1" if _slack_tools_loaded() else "0"
         try:
             from hermes_constants import display_hermes_home
             home_display = str(display_hermes_home())

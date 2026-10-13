@@ -169,7 +169,6 @@ class GatewayInboundMixin(GatewayPluginInjectionMixin):
     ) -> Optional[tuple[MessageEvent, SessionSource, bool]]:
         """Ingress gates for ``_handle_message``; None when dropped, else ``(event, source, is_internal)``
         (the ``pre_gateway_dispatch`` hook may have rewritten ``event``)."""
-        from gateway.run import _is_slack_ignored_channel
         source = event.source
         # getattr(self, ...) throughout: bare test runners build GatewayRunner via object.__new__.
         _config = getattr(self, "config", None)
@@ -201,19 +200,6 @@ class GatewayInboundMixin(GatewayPluginInjectionMixin):
         # Ignored-channel guard runs FIRST — before startup-restore queueing, plugin hooks, auth,
         # and session setup — so an ignored channel can never reach pairing/auth/session state.
         _chat_id = getattr(source, "chat_id", None)
-        if not is_internal and getattr(source, "platform", None) == Platform.SLACK:
-            # The routed adapter's extra carries a secondary profile's own list; ``_config`` is the default's.
-            _slack_adapter = None
-            with suppress(Exception):
-                _slack_adapter = self._intake_adapter_for(source)
-        if (
-            # See #51899.
-            not is_internal
-            and getattr(source, "platform", None) == Platform.SLACK
-            and _is_slack_ignored_channel(_config, _chat_id, _slack_adapter)
-        ):
-            logger.info("Dropping Slack message from configured ignored channel %s", _chat_id)
-            return None
 
         if (
             getattr(self, "_startup_restore_in_progress", False)
@@ -1436,8 +1422,6 @@ class GatewayInboundMixin(GatewayPluginInjectionMixin):
             # Slack: expose the CURRENT speaker's verifiable `<@U...>` id so "mention me again" has a
             # trusted target (display names are ambiguous). user_id comes from the envelope, not user-editable.
             # See #17916.
-            if source.platform == Platform.SLACK and source.user_id:
-                _safe_user_name = f"{_safe_user_name} | Slack user <@{source.user_id}>"
             message_text = f"[{_safe_user_name}] {message_text}"
         # After the sender-prefix so the prefix applies only to the trigger message, not the backfill.
         if getattr(event, "channel_context", None):
@@ -1602,18 +1586,6 @@ class GatewayInboundMixin(GatewayPluginInjectionMixin):
             _who = " your previous message" if getattr(event, "reply_to_is_own_message", False) else ""
             message_text = f'[Replying to{_who}: "{reply_text}"]\n\n{message_text}'
 
-        # Discord: the triggering message id goes on the per-turn user message, never the cached
-        # system prompt — it changes every turn and would bust the agent-cache signature. It is
-        # the OUTERMOST prefix so strip_discord_triggering_note can peel exactly it off the
-        # persisted transcript row without touching the reply pointer.
-        if (
-            source is not None
-            and getattr(source, "platform", None) == Platform.DISCORD
-            and getattr(event, "message_id", None)
-        ):
-            from gateway.session import _discord_tools_loaded as _disc_tools_loaded
-            if _disc_tools_loaded():
-                message_text = f"{discord_triggering_note(event.message_id)}\n\n{message_text}"
         return message_text
 
     async def _inbound_model_context_length(self, source: SessionSource, session_key: str) -> int:

@@ -1209,14 +1209,6 @@ class GatewayAdapterLifecycleMixin:
             return
         noted.add((profile_name, platform))
         pv = platform.value
-        if platform is Platform.WHATSAPP:
-            message = f"WhatsApp is not paired; pair it: hermes -p {profile_name} whatsapp"
-            logger.info("[MULTIPLEX] Profile '%s': %s", profile_name, message)
-            self._update_platform_runtime_status(
-                f"{profile_name}:{pv}", platform_state="disabled",
-                error_code="whatsapp_unpaired", error_message=message,
-            )
-            return
         logger.info(
             "[MULTIPLEX] Profile '%s': %s is enabled but not served — %s is process-level shared ingress "
             "owned by the default profile under multiplex. Enable and configure %s on the default profile "
@@ -1234,8 +1226,6 @@ class GatewayAdapterLifecycleMixin:
         noted = getattr(self, "_unserved_secondary_platforms", None) or ()
         lines = []
         for platform in sorted({p for _n, p in noted}, key=lambda p: p.value):
-            if platform is Platform.WHATSAPP:
-                continue  # unpaired sessions have their own per-profile remedy
             if platform in self.adapters or platform in (getattr(self, "_failed_platforms", None) or {}):
                 continue  # the default owns it: secondaries ARE served through the shared adapter
             profiles = sorted(n for n, p in noted if p is platform)
@@ -1273,8 +1263,6 @@ class GatewayAdapterLifecycleMixin:
             with _profile_runtime_scope(profile_home, hydrate_secrets=False):
                 has_credential = _platform_has_bot_credential(platform, platform_config)
             if multiplex and not has_credential:
-                if platform is Platform.WHATSAPP:
-                    self._note_unserved_secondary_platform(profile_name, platform)
                 logger.info(
                     "[MULTIPLEX] Profile '%s': skipping %s - no bot credential "
                     "in this profile's secrets", profile_name, platform.value,

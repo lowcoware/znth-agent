@@ -1668,7 +1668,6 @@ class GatewayStartupMixin:
         if await self._abort_startup_if_shutdown_requested():
             return True
         self.delivery_router.adapters = self.adapters
-        self._wire_teams_pipeline_runtime()
         self._running = True
         self._install_plugin_message_injector()
         # A boot that could not start every configured platform is not a normal run: stamp ``degraded``
@@ -1760,17 +1759,6 @@ class GatewayStartupMixin:
             # The Telegram adapter keys forum-topic replies ``group:<chat>:<topic>`` (never
             # ``thread``); bind the handoff on the same slot.
             chat_type = "group"
-        if platform == Platform.SLACK:
-            # Slack keys a thread reply on the parent channel's type ("dm" for a D… channel, else
-            # "group") plus the workspace id — never on a "thread" slot. Mirror the adapter's inbound
-            # source shape or the first reply after a restart lands on a different key (#111896).
-            chat_type = "dm" if home_chat_id.startswith("D") else "group"
-            scope_for_chat = getattr(transport.adapter, "scope_id_for_chat", None)
-            scope_id = home.scope_id or (scope_for_chat(home_chat_id) if callable(scope_for_chat) else None)
-        if platform == Platform.MATRIX:
-            # Matrix likewise keys an in-thread reply on the ROOM's type (#112918); the adapter's
-            # get_chat_info reports "dm"/"group" for the home room.
-            chat_type = "dm" if await self._handoff_home_is_dm(transport.adapter, home_chat_id) else "group"
         # Discord builds in-thread messages with ``chat_id == thread id``: key on the thread's OWN id.
         dest_source = SessionSource(
             platform=platform,

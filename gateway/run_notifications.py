@@ -179,15 +179,11 @@ class GatewayNotificationsMixin(GatewayNotificationOwnershipMixin):
 
     async def _deliver_platform_notice(self, source, content: str) -> None:
         """Deliver a setup/operational notice using platform-specific privacy rules."""
-        from gateway.run import _is_slack_ignored_channel
         adapter = self._delivery_adapter_for(source)
         if not adapter:
             return
         config = getattr(self, "config", None)
         chat_id = getattr(source, "chat_id", None)
-        if config and getattr(source, "platform", None) == Platform.SLACK and _is_slack_ignored_channel(config, chat_id, adapter):
-            logger.info("Skipping Slack platform notice for configured ignored channel %s", chat_id)
-            return
         # The routed adapter carries ITS profile's ``platforms.<p>`` block; ``self.config`` is the
         # launch profile's, so a served secondary's ``notice_delivery: private`` would be ignored.
         adapter_config = getattr(adapter, "config", None)

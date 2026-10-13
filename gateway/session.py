@@ -202,64 +202,6 @@ def _should_redact_pii(platform: Platform, enabled: bool) -> bool:
         return False
 
 
-def _slack_tools_loaded() -> bool:
-    """True iff the agent will actually have Slack tools this session.
-
-    Either the native `slack` toolset is enabled AND `SLACK_BOT_TOKEN` is set (the tool's
-    `check_fn` gates on it), or an MCP server whose name suggests Slack has ACTUALLY registered
-    tools (configured-but-unconnected does not count; MCP servers are process-wide, so this is
-    intentionally not per-session). False on any error so a bad config never promises tools.
-    """
-    try:
-        from tools.mcp_tool_discovery import get_registered_mcp_server_names
-        if any("slack" in name.lower() for name in get_registered_mcp_server_names()):
-            return True
-    except Exception:
-        pass
-
-    # Profile secret scope, not bare env: under multiplex the env may hold another
-    # profile's token. Only the unscoped default-profile path (UnscopedSecretError)
-    # reads the env; any other scoped-read failure fails closed rather than borrowing.
-    try:
-        from agent.secret_scope import UnscopedSecretError, get_secret
-
-        try:
-            token = get_secret("SLACK_BOT_TOKEN") or ""
-        except UnscopedSecretError:
-            token = os.environ.get("SLACK_BOT_TOKEN") or ""
-    except Exception:
-        return False
-    if not token.strip():
-        return False
-    try:
-        # Read-only loader: this runs per turn via _ephemeral_change_key, and _get_platform_tools
-        # only reads the config. load_config()'s defensive deepcopy is ~half this probe's cost.
-        from hermes_cli.config import load_config_readonly
-        from hermes_cli.tools_config import _get_platform_tools
-        # include_default_mcp_servers defaults True so a default-enabled Slack MCP counts too.
-        return "slack" in _get_platform_tools(load_config_readonly(), "slack")
-    except Exception:
-        return False
-
-
-def _discord_tools_loaded() -> bool:
-    """True iff the agent will actually have Discord tools this session: `discord`/`discord_admin`
-    toolset enabled AND `DISCORD_BOT_TOKEN` set (the tool's `check_fn` gates on it)."""
-    try:
-        from agent.secret_scope import get_secret
-        # Read-only loader: this runs per turn via _ephemeral_change_key, and _get_platform_tools
-        # only reads the config. load_config()'s defensive deepcopy is ~half this probe's cost.
-        from hermes_cli.config import load_config_readonly
-        from hermes_cli.tools_config import _get_platform_tools
-
-        if not (get_secret("DISCORD_BOT_TOKEN", "") or "").strip():
-            return False
-        enabled = _get_platform_tools(load_config_readonly(), "discord", include_default_mcp_servers=False)
-        return "discord" in enabled or "discord_admin" in enabled
-    except Exception:
-        return False
-
-
 _MAX_PROMPT_METADATA_CHARS = 240
 
 
@@ -694,9 +636,6 @@ class SessionStore(
         self._fast_persisted_entries: dict[str, tuple[int, str]] = {}
         self._inflight_lock = threading.Lock()
         self._inflight_sessions: dict[str, _SessionFlight] = {}
-        # An unscoped legacy Slack key is claimed once per process (two workspaces must not both
-        # revive one session).
-        self._legacy_slack_claim_lock = threading.Lock()
         self._claimed_legacy_slack_keys: set[str] = set()
         self._transcript_retry_lock = threading.Lock()
         # One transcript drainer at a time: parent->child queue migration stays linearizable.
@@ -827,8 +766,6 @@ class SessionStore(
         only ``_entries`` / ``_loaded`` mutations."""
         session_key = self._generate_session_key(source)
         now = _now()
-        if not force_new:
-            self._adopt_legacy_slack_entry(source, session_key)
 
         # Phase 1 (lock): snapshot the entry for stale/reset checks.
         with self._lock:
