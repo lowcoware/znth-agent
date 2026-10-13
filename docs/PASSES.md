@@ -171,3 +171,26 @@ python3 scripts/znth/strict_import_check.py --root /root/znth-agent \
 3. **`web_extract` без extract-бэкенда — ЧАСТИЧНО закрыт:** self-hosted Firecrawl умеет extract, так что с поднятым своим инстансом инструмент работает. Свой локальный конвертер страниц (HTTP-фетч + markdown, как в openclaude) — отдельная задача, в плане.
 4. **8 тестовых файлов** (`test_web_managed_routing`, `test_web_tools_perplexity`, `test_web_picker_active_rows`, `test_web_providers`, `test_web_backend_capability_isolation`, `test_web_tools_config`, `test_web_providers_searxng`, `test_web_extract_robustness`) собираются, но часть их кейсов покрывает снятое. Тесты скоупа владелец решил держать целиком, поэтому файлы не тронуты — их надо подрезать точечно.
 5. **Managed-шлюз (вендорский маршрут)** жив в `tools/managed_tool_gateway.py`, `hermes_cli/nous_subscription.py` и используется другими подсистемами (image_gen, tts, transcription, modal). В резке поиска он только заглушен; снимать ли механизм целиком — отдельное решение.
+
+### Проход 2 — облачные браузеры. СДЕЛАНО (2026-10-13)
+
+**Что срезано:** `plugins/browser/` удалён целиком — провайдеры `browser_use` (managed Browser Use), `browserbase`, `firecrawl` и их общая база `_common.py` (жизненный цикл облачных сессий, 138 строк). Всего 15 файлов, −574 строки.
+
+**Швы:**
+
+- `tools/browser_tool_cloud.py` импортировал оба провайдера **на верхнем уровне** — удаление каталогов уронило бы все браузерные инструменты. Импорты сняты.
+- `_autodetect_cloud_provider()` → заглушка `None` с маркером: walk по облачным вендорам убран, поэтому никогда не настроенная установка садится на локальный браузер.
+- Из `_resolve_cloud_provider_uncached()` убрана привязка managed-выбора `nous` → `browser-use`.
+- `agent/browser_registry.py::_LEGACY_PREFERENCE` пуст. Резолвер по имени **не тронут** — пользовательский плагин, зарегистрировавший браузерного провайдера, по-прежнему достаётся явным `browser.cloud_provider: <имя>`.
+- Поверхности выбора: `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `BROWSER_USE_API_KEY` убраны из конфига; из мастера убрана строка «Nous Subscription (Browser Use cloud)». В разделе браузера остались только локальные строки: Local Browser, Lightpanda, Camofox, Browser Use (локальный CLI).
+- В перечислении метрик значения `browser-use`/`browserbase`/`firecrawl` оставлены (это контракт меток для дашбордов), поправлен только устаревший комментарий.
+
+**Проверено (вывод команд):**
+
+- Строгий импорт: 9 модулей (`model_tools`, `tools.browser_tool`, `tools.browser_tool_cloud`, `tools.browser_use_cli`, `tools.browser_lightpanda`, `agent.browser_registry`, `agent.browser_provider`, `hermes_cli.tools_config`, `hermes_cli.config_defaults`) — все внутри `/root/znth-agent`.
+- Реестр браузерных облачных провайдеров: `none`; `_LEGACY_PREFERENCE` = `()`.
+- `_autodetect_cloud_provider()` → `None`; `_get_cloud_provider()` → `None`; `_is_local_mode()` → `True`; `browser_backend_name()` → `'local'`.
+- Локальный движок `browser-use` CLI на месте (`tools/browser_use_cli.py`, `_BACKEND_KEY = browser-use`).
+
+**Не проверено (честно):** живой прогон навигации не выполнялся — проверено разрешение режима (локальный) и импорты, но не фактический запуск браузера.
+
