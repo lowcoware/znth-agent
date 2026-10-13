@@ -18,10 +18,6 @@ from gateway.bot_loop_guard import BotLoopGuard
 from gateway.config import Platform
 from gateway.pairing import _PLATFORM_ALLOWLIST_ENV
 from gateway.session import SessionSource
-from gateway.whatsapp_identity import (
-    expand_whatsapp_aliases as _expand_whatsapp_auth_aliases,
-    normalize_whatsapp_identifier as _normalize_whatsapp_identifier,
-)
 
 _GROUP_CHAT_TYPES = frozenset({"group", "forum", "channel"})
 _GROUP_FORUM_TYPES = frozenset({"group", "forum"})
@@ -34,16 +30,13 @@ logger = logging.getLogger(__name__)
 _ALLOWED_USERS_ENV = {Platform(k): v for k, v in _PLATFORM_ALLOWLIST_ENV.items()}
 _ALLOW_ALL_ENV = {p: v.replace("_ALLOWED_USERS", "_ALLOW_ALL_USERS") for p, v in _ALLOWED_USERS_ENV.items()}
 _GROUP_USER_ENV = {Platform.TELEGRAM: "TELEGRAM_GROUP_ALLOWED_USERS"}
-_GROUP_CHAT_ENV = {Platform.TELEGRAM: "TELEGRAM_GROUP_ALLOWED_CHATS", Platform.QQBOT: "QQ_GROUP_ALLOWED_USERS"}
+_GROUP_CHAT_ENV = {Platform.TELEGRAM: "TELEGRAM_GROUP_ALLOWED_CHATS"}
 _ALLOW_BOTS_ENV = {
     # Bots admitted by {PLATFORM}_ALLOW_BOTS bypass the human allowlist (#4466). Checked before the
-    # no-user-id guard below: some platforms deliver bot/automation traffic with no user_id at all -- e.g.
-    # Slack Workflow Builder posts arrive as subtype=bot_message with user=None -- so deferring past the
-    # guard would reject them outright (the same reason the chat-scoped allowlist above runs early).
-    Platform.DISCORD: "DISCORD_ALLOW_BOTS",
-    Platform.FEISHU: "FEISHU_ALLOW_BOTS",
+    # no-user-id guard below: some platforms deliver bot/automation traffic with no user_id at all,
+    # so deferring past the guard would reject them outright (the same reason the chat-scoped
+    # allowlist above runs early).
     Platform.TELEGRAM: "TELEGRAM_ALLOW_BOTS",
-    Platform.SLACK: "SLACK_ALLOW_BOTS",
 }
 
 
@@ -159,14 +152,6 @@ def _normalize_nostr_allow_entries(entries: set) -> set:
 def _principal_matches_allowlist(source, user_id: str, allowed_ids: set) -> bool:
     """Whether *user_id* (under any platform-specific alias) is in *allowed_ids*."""
     check_ids = {user_id}
-
-    # WhatsApp (Baileys + Cloud): phone<->LID / JID aliases match the same principal.
-    if source.platform in {Platform.WHATSAPP, Platform.WHATSAPP_CLOUD}:
-        allowed_ids = set().union(*(_expand_whatsapp_auth_aliases(a) for a in allowed_ids)) or allowed_ids
-        check_ids.update(_expand_whatsapp_auth_aliases(user_id))
-        normalized_user_id = _normalize_whatsapp_identifier(user_id)
-        if normalized_user_id:
-            check_ids.add(normalized_user_id)
 
     platform_value = source.platform.value if source.platform is not None else None
     # SimpleX: SIMPLEX_ALLOWED_USERS matches only the stable numeric contactId (user_id).
@@ -716,8 +701,6 @@ class GatewayAuthorizationMixin:
             and "unauthorized_dm_behavior" in self._config_extra(platform)
         ):
             return config.get_unauthorized_dm_behavior(platform)
-        if platform == Platform.EMAIL:
-            return "ignore"
         if config and hasattr(config, "unauthorized_dm_behavior") and config.unauthorized_dm_behavior != "pair":
             return config.unauthorized_dm_behavior
 
@@ -730,8 +713,7 @@ class GatewayAuthorizationMixin:
                 return "pair"
             if dm_policy in {"allowlist", "disabled"}:
                 return "ignore"
-            # Historical: Yuanbao is absent from this allowlist-aware default.
-            env_key = "" if platform == Platform.YUANBAO else _ALLOWED_USERS_ENV.get(platform, "")
+            env_key = _ALLOWED_USERS_ENV.get(platform, "")
             allowlist_keys = [env_key, _GROUP_USER_ENV.get(platform), _GROUP_CHAT_ENV.get(platform), *allowlist_keys]
         if any(key and _auth_env(key).strip() for key in allowlist_keys):
             return "ignore"

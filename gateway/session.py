@@ -13,7 +13,6 @@ from dataclasses import dataclass, field, fields
 from typing import Dict, List, Optional, Any
 
 from .config import Platform, GatewayConfig, HomeChannel
-from .whatsapp_identity import canonical_whatsapp_identifier
 from gateway.session_identity import transport_profile_of
 from gateway.session_persistence import SessionPersistenceMixin, _DB_UNPINNED
 from gateway.session_prompt_pin import SessionPromptPinMixin, sanitize_prompt_pin
@@ -187,7 +186,7 @@ class SessionContext:
 # Platforms where user IDs can be redacted: no ``<@user_id>``-style mention
 # system that needs raw IDs (which is why Discord is excluded).
 _PII_SAFE_PLATFORMS = frozenset({
-    Platform.WHATSAPP, Platform.SIGNAL, Platform.TELEGRAM, Platform.BLUEBUBBLES,
+    Platform.TELEGRAM,
 })
 
 
@@ -304,73 +303,6 @@ _SLACK_NO_TOOLS_NOTE = (
 )
 
 
-def _slack_platform_notes(context: SessionContext) -> list[str]:
-    # Capability note only when Slack tools are loaded; otherwise an honest disclaimer.
-    lines = ["", _SLACK_TOOLS_NOTE if _slack_tools_loaded() else _SLACK_NO_TOOLS_NOTE]
-    if context.shared_multi_user_session:
-        lines.append(
-            "In shared Slack threads, use the current turn's sender prefix as the only verified "
-            "current-author mention target. Do not guess or reuse `<@U...>` mentions from names, "
-            "memory, or prior conversation history."
-        )
-    return lines
-
-
-def _discord_platform_notes(context: SessionContext) -> list[str]:
-    if _discord_tools_loaded():
-        src = context.source
-        lines = ["", "**Discord IDs (for the `discord` / `discord_admin` tools):**"]
-        if src.guild_id:
-            lines.append(f"  - Guild: `{src.guild_id}`")
-        if src.thread_id and src.parent_chat_id:
-            lines.append(f"  - Parent channel: `{src.parent_chat_id}`")
-            lines.append(f"  - Thread: `{src.thread_id}` (use as `channel_id` for fetch_messages etc.)")
-        else:
-            lines.append(f"  - Channel: `{src.chat_id}`")
-        # Neither the volatile id nor its presence belongs in this pinned block: slash and voice
-        # turns have no triggering message, so a presence-gated line flips the prompt between them
-        # and typed turns. run.py injects the real id into the user message when there is one.
-        lines.append(
-            "  - Triggering message: when available, its ID is provided per-turn in the incoming "
-            "user message (use it as `message_id` for reply/react/pin)"
-        )
-    else:
-        lines = ["", (
-            "**Platform notes:** You are running inside Discord. You do NOT have access to "
-            "Discord-specific APIs — you cannot search channel history, pin messages, manage "
-            "roles, or list server members. Do not promise to perform these actions. If the user "
-            "asks, explain that you can only read messages sent directly to you and respond."
-        )]
-    # Static pointer: live voice-channel state goes on the user message (prompt-cache safety).
-    lines += ["", (
-        "Voice-channel state, when relevant, appears in the current message as a "
-        "`[Voice channel now: ...]` note."
-    )]
-    return lines
-
-
-_STATIC_PLATFORM_NOTES = {
-    Platform.BLUEBUBBLES: (
-        "**Platform notes:** You are responding via iMessage. Keep responses short and "
-        "conversational — think texts, not essays. Structure longer replies as separate short "
-        "thoughts, each separated by a blank line (double newline). Each block between blank lines "
-        "will be delivered as its own iMessage bubble, so write accordingly: one idea per bubble, "
-        "1–3 sentences each. If the user needs a detailed answer, give the short version first and "
-        "offer to elaborate."
-    ),
-    Platform.YUANBAO: (
-        "**Platform notes:** You are running inside Yuanbao. To send a private (DM) message to a "
-        "user in the current group, use the yb_send_dm tool (look up the recipient by name or pass "
-        "their user_id). Your normal reply is delivered to the group you are responding in."
-    ),
-}
-
-# Platform -> extra "Platform notes" lines for the session-context prompt.
-_PLATFORM_NOTES = {
-    Platform.SLACK: _slack_platform_notes,
-    Platform.DISCORD: _discord_platform_notes,
-    **{p: (lambda ctx, note=note: ["", note]) for p, note in _STATIC_PLATFORM_NOTES.items()},
-}
 
 
 def build_session_context_prompt(context: SessionContext, *, redact_pii: bool = False) -> str:
@@ -405,20 +337,6 @@ def build_session_context_prompt(context: SessionContext, *, redact_pii: bool = 
     if src.chat_topic:
         lines.append(f"**Channel Topic:** {_format_untrusted_prompt_value(src.chat_topic)}")
 
-    if src.platform == Platform.MATRIX:
-        lines += [
-            "",
-            f"**Matrix Room:** {_format_untrusted_prompt_value(src.chat_name or src.chat_id)}",
-            f"**Matrix Room ID:** {_chat_label(src.chat_id)}",
-        ]
-        if src.thread_id:
-            lines.append(f"**Matrix Thread:** {_chat_label(src.thread_id)}")
-        lines.append(
-            "**Matrix room boundary:** Treat this turn as scoped to the current Matrix room/thread "
-            "only. Do not assume unresolved references are about other Matrix rooms or projects "
-            "unless the user explicitly says so."
-        )
-
     # Shared multi-user sessions: never pin one user name in the system prompt (changes per turn ->
     # busts the prompt cache); sender names are prefixed on each user message instead.
     if context.shared_multi_user_session:
@@ -433,7 +351,6 @@ def build_session_context_prompt(context: SessionContext, *, redact_pii: bool = 
         uid = _hash_sender_id(src.user_id) if redact_pii else src.user_id
         lines.append(f"**User ID:** {_format_untrusted_prompt_value(uid)}")
 
-    lines.extend(_PLATFORM_NOTES.get(src.platform, lambda ctx: [])(context))
     platforms_list = ["local (files on this machine)"] + [
         f"{p.value}: Connected ✓" for p in context.connected_platforms if p != Platform.LOCAL
     ]
@@ -621,27 +538,6 @@ class SessionEntry:
         )
 
 
-def build_channel_continuity_note(entry: SessionEntry, source: SessionSource) -> Optional[str]:
-    """One-line continuity hint for long-lived Slack/Discord channels/threads.
-
-    After an auto-reset the agent could bind a new request to an unrelated recent session; this
-    points it at the prior session in *this* channel (via ``session_search``). ``None`` unless the
-    platform is Slack/Discord, the auto-reset had real activity, and prev_session_id is set.
-    """
-    if source.platform not in (Platform.SLACK, Platform.DISCORD):
-        return None
-    prev = entry.prev_session_id
-    if not entry.reset_had_activity or not prev:
-        return None
-    where = "thread" if source.thread_id else "channel"
-    return (
-        f"[System note: This {where} had an earlier Hermes session (session_id: {prev}) that was "
-        f"auto-reset. If the user refers to earlier work here, or the request depends on this "
-        f"{where}'s history, use the session_search tool to recall that prior session before "
-        f"acting — do not assume an unrelated recent session is the right context.]"
-    )
-
-
 def is_shared_multi_user_session(
     source: SessionSource, *, group_sessions_per_user: bool = True,
     thread_sessions_per_user: bool = False,
@@ -677,8 +573,6 @@ def _canonical_participant(source: SessionSource) -> Optional[str]:
     """Sender id for key isolation; WhatsApp JID/LID aliases are canonicalized so alias flips
     cannot split one member into two sessions."""
     participant_id = source.user_id_alt or source.user_id
-    if participant_id and source.platform == Platform.WHATSAPP:
-        participant_id = canonical_whatsapp_identifier(str(participant_id)) or participant_id
     return participant_id
 
 
@@ -696,8 +590,6 @@ def build_session_key(
     """
     is_dm = source.chat_type == "dm"
     chat_id = source.chat_id
-    if is_dm and source.platform == Platform.WHATSAPP:
-        chat_id = canonical_whatsapp_identifier(chat_id)
     # Discord auto-thread continuity: key a channel-initiating message on the thread it WILL be
     # delivered into (prospective_thread_id), and normalize the chat_type slot to "thread" so
     # in-thread follow-ups byte-match. A real thread_id always wins. DMs use thread_id only.
@@ -715,8 +607,6 @@ def build_session_key(
     participant_id = _canonical_participant(source) if (isolate_user or not is_dm) else None
 
     parts = [_session_key_namespace(profile), source.platform.value, chat_type_slot]
-    if source.platform == Platform.SLACK and source.scope_id:
-        parts.append(str(source.scope_id))
     if chat_id:
         parts.append(chat_id)
     # DMs put the participant before the thread; groups/threads put it after.

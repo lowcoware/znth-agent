@@ -30,7 +30,7 @@ from gateway.response_filters import (
 )
 from gateway.warning_notifications import diagnostic_metadata, diagnostic_turn_muted, diagnostic_wake_muted
 from gateway.session import (
-    SessionSource, _session_key_namespace, build_channel_continuity_note,
+    SessionSource, _session_key_namespace,
     build_session_context,
 )
 from gateway.session_transcript import TranscriptReadError
@@ -546,15 +546,6 @@ class GatewayTurnMixin:
         from gateway.run import _AUTO_RESET_CONTEXT_NOTES
         reset_reason = getattr(session_entry, 'auto_reset_reason', None) or 'suspended'
         context_note = _AUTO_RESET_CONTEXT_NOTES.get(reset_reason, _AUTO_RESET_CONTEXT_NOTES["suspended"])
-        # Long-lived channels: point the agent at the prior same-channel session for session_search.
-        try:
-            # Returns None (appends nothing) for other platforms or when there's no prior activity to
-            # recall. Deterministic — no extra API/DB calls (#36220).
-            continuity_note = build_channel_continuity_note(session_entry, source)
-        except Exception:
-            continuity_note = None
-        if continuity_note:
-            context_note = context_note + "\n\n" + continuity_note
         turn_sidecar_notes.append(context_note)
 
         try:
@@ -1451,10 +1442,8 @@ class GatewayTurnMixin:
                 if prof and prof != "default" and _lgc().get_home_channel(source.platform):
                     home_env = "set"
         if not home_env:
-            # Slack routes every command through the parent `/hermes`; bare `/sethome` would fail.
-            sethome_cmd = "/hermes sethome" if source.platform == Platform.SLACK else "/sethome"
             await self._deliver_platform_notice(
-                source, t("gateway.notify.no_home_channel", platform=platform_name.title(), sethome_cmd=sethome_cmd),
+                source, t("gateway.notify.no_home_channel", platform=platform_name.title(), sethome_cmd="/sethome"),
             )
 
     def _hmwa_apply_message_timestamp(self, event, message_text):
@@ -1603,12 +1592,9 @@ class GatewayTurnMixin:
             _show_reasoning_effective = _resolve_gateway_display_bool(
                 _load_gateway_config(), _platform_config_key(source.platform), "show_reasoning",
                 default=bool(getattr(self, "_show_reasoning", False)), platform=source.platform,
-                require_platform_override_for={Platform.MATTERMOST},
             )
         except Exception:
-            _show_reasoning_effective = (
-                False if source.platform == Platform.MATTERMOST else getattr(self, "_show_reasoning", False)
-            )
+            _show_reasoning_effective = getattr(self, "_show_reasoning", False)
         last_reasoning = agent_result.get("last_reasoning")
         if not (_show_reasoning_effective and response and not _intentional_silence and last_reasoning):
             return response
@@ -2685,9 +2671,6 @@ class GatewayTurnMixin:
         if not _adapter_supports_edit and not _adapter_supports_native_stream and on_missing_cursor == "raise":
             raise RuntimeError("skip streaming for non-editable platform")
         _effective_cursor = scfg.cursor if _adapter_supports_edit else ""
-        # Some Matrix clients render the cursor as tofu: stream text, no cursor.
-        if source.platform == Platform.MATRIX:
-            _effective_cursor = ""
         # Fresh-final applies to Telegram only (others edit in place cheaply).
         # Fresh-final applies to Telegram only — other platforms either edit in place cheaply (Discord,
         # Slack) or don't have the timestamp-on-edit / edit-timestamp-stays-stale problem. (Ported from
@@ -3011,11 +2994,11 @@ class GatewayTurnMixin:
         # Interim assistant messages and thinking_progress are independent of tool progress (same
         # queue). Mattermost requires a per-platform opt-in: scratch text leaks into public threads.
         interim_assistant_messages_mode = _display_surface_mode(
-            "interim_assistant_messages", default=True, require_platform_override_for={Platform.MATTERMOST},
+            "interim_assistant_messages", default=True,
         )
         interim_assistant_messages_enabled = not is_webhook and interim_assistant_messages_mode != "off"
         _thinking_enabled = _display_surface_mode(
-            "thinking_progress", default=False, require_platform_override_for={Platform.MATTERMOST},
+            "thinking_progress", default=False,
         ) != "off"
         # Slack-native task cards need the progress queue even with text tool_progress off.
         # Slack-native task cards (#29483): when the Slack adapter's opt-in is set, tool progress renders as
@@ -3027,15 +3010,6 @@ class GatewayTurnMixin:
         # (global, platform override, or legacy overrides) has asked for no tool progress at all and
         # gets no cards either. Every other explicit mode keeps the card lane.
         _native_slack_task_cards = False
-        if (
-            source.platform == Platform.SLACK
-            and hasattr(adapter, "native_task_cards_enabled")
-            and not (_tool_progress_explicit and progress_mode == "off")
-        ):
-            try:
-                _native_slack_task_cards = bool(adapter.native_task_cards_enabled())
-            except Exception:
-                logger.debug("Slack native task-card config check failed", exc_info=True)
         return self._RunAgentDisplay(
             user_config=user_config, platform_key=platform_key, enabled_toolsets=enabled_toolsets,
             disabled_toolsets=disabled_toolsets, resolve_display_setting=resolve_display_setting,
@@ -3142,7 +3116,7 @@ class GatewayTurnMixin:
         from gateway.run import _non_conversational_metadata, _resolve_progress_thread_id
         is_buzz = str(getattr(source.platform, "value", source.platform) or "").lower() == "buzz"
         _progress_reply_in_thread = True
-        _adapter = self._delivery_adapter_for(source) if source.platform == Platform.SLACK or is_buzz else None
+        _adapter = self._delivery_adapter_for(source) if is_buzz else None
         if _adapter is not None:
             try:
                 if is_buzz:
@@ -3184,17 +3158,13 @@ class GatewayTurnMixin:
         # Buzz has no native thread_id: thread via reply-to unless the user opted out.
         _progress_reply_to = (
             event_message_id
-            if (source.platform in (Platform.FEISHU, Platform.MATTERMOST) and source.thread_id and event_message_id)
-            or (is_buzz and event_message_id and _progress_reply_in_thread)
+            if (is_buzz and event_message_id and _progress_reply_in_thread)
             or _relay_prospective_thread_id
             else None
         )
-        if source.platform == Platform.FEISHU and source.thread_id and event_message_id:
-            _status_thread_metadata = {"thread_id": _progress_thread_id, "reply_to_message_id": event_message_id}
-        else:
-            _status_thread_metadata = self._thread_metadata_for_progress(
-                source, event_message_id, _progress_thread_id, _relay_prospective_thread_id,
-            )
+        _status_thread_metadata = self._thread_metadata_for_progress(
+            source, event_message_id, _progress_thread_id, _relay_prospective_thread_id,
+        )
         return _progress_metadata, _progress_reply_to, _status_thread_metadata
 
     async def _run_agent_write_tool_log(self, log_queue: Any) -> None:
