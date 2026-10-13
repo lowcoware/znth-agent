@@ -283,3 +283,28 @@ CLI** из форка — exit 0, 230 строк справки, ноль упо
 `setup_whatsapp_cloud.py`, `plugin-catalog/hermes-discord-rpc.yaml`, доки и тесты. Адаптера за ними
 нет, поэтому функционально инертны, но выглядят как живые.
 
+### Проход 3b (начало) — чистка имён-призраков. СДЕЛАНО частично (2026-10-13)
+
+Снятие имён снятых каналов со **видимых** поверхностей (перечисление `Platform` и таблицы
+креденшелов в `config_env` намеренно не тронуты — см. вывод прохода 3a).
+
+**Что снято:**
+- `hermes_cli/platforms.py` — `PLATFORMS` оставлен с `cli`, `telegram`, `webhook`, `api_server`,
+  `cron`; строки 17 снятых каналов убраны (ими пользуются `skills_config` и `tools_config` для
+  выбора платформы в скиллах и тулсетах);
+- `hermes_cli/web_server_messaging.py` — из `_PLATFORM_OVERRIDES` убраны 149 строк (discord … yuanbao;
+  остались `telegram`, `api_server`, `webhook`, `relay`), `_PLATFORM_ORDER` сведён к трём живым;
+- `hermes_cli/web_server_gateway.py` — `_PORT_BINDING_PLATFORM_PORTS` сведён к `webhook` и
+  `api_server` (данные только для отображения топологии);
+- `hermes_cli/setup_quick.py` — `_MESSAGING_PLATFORMS` сведён к Telegram;
+- удалены: `hermes_cli/setup_whatsapp_cloud.py` (379 строк, внешних импортёров нет),
+  `plugin-catalog/hermes-discord-rpc.yaml`.
+
+**Проверено:** строгий импорт 7 модулей (все внутри форка); живой старт CLI — exit 0, ноль
+упоминаний снятых каналов в справке; `py_compile` обоих затронутых файлов веб-слоя.
+
+**Остаётся в 3b:** поток WhatsApp-онбординга (QR и мост) в `hermes_cli/web_routers/messaging.py` +
+панель в дашборде — связан с UI, отдельная задача; таблицы креденшелов и домашних каналов в
+`gateway/config_env.py`; члены перечисления `Platform`; карта allow-bots в `authz_mixin.py`; заметки
+платформ в `session.py`; списки в `gateway/run.py`; доки `website/` и тесты.
+

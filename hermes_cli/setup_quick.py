@@ -11,7 +11,7 @@ from pathlib import Path
 logger = logging.getLogger("hermes_cli.setup")
 
 # (env-var name substring, platform label, emoji) — order matters: first match wins.
-_MESSAGING_PLATFORMS = (("TELEGRAM", "Telegram", "📱"), ("DISCORD", "Discord", "💬"), ("SLACK", "Slack", "💼"))
+_MESSAGING_PLATFORMS = (("TELEGRAM", "Telegram", "📱"),)
 
 
 
