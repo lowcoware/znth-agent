@@ -103,9 +103,9 @@ async def test_partial_delivery_is_persisted_and_not_repeated(boot_notice):
         enabled=True,
         home_channel=HomeChannel(platform=Platform.TELEGRAM, chat_id="other-home", thread_id="7", name="Other"),
     )
-    runner.config.platforms[Platform.SLACK] = PlatformConfig(
+    runner.config.platforms[Platform.MATRIX] = PlatformConfig(
         enabled=True, gateway_restart_notification=False,
-        home_channel=HomeChannel(platform=Platform.SLACK, chat_id="muted-home", name="Muted"),
+        home_channel=HomeChannel(platform=Platform.MATRIX, chat_id="muted-home", name="Muted"),
     )
     runner.adapters[Platform.TELEGRAM] = telegram
 

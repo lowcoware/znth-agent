@@ -99,7 +99,7 @@ class TestStartupPlatformIsolation:
         runner.config = GatewayConfig(
             platforms={
                 Platform.TELEGRAM: PlatformConfig(enabled=True, token="test"),
-                Platform.FEISHU: PlatformConfig(enabled=True, token="test"),
+                Platform.MATRIX: PlatformConfig(enabled=True, token="test"),
             },
             sessions_dir=tmp_path,
         )
@@ -115,7 +115,7 @@ class TestStartupPlatformIsolation:
 
         adapters = {
             Platform.TELEGRAM: StubAdapter(platform=Platform.TELEGRAM),
-            Platform.FEISHU: StubAdapter(platform=Platform.FEISHU),
+            Platform.MATRIX: StubAdapter(platform=Platform.MATRIX),
         }
         runner._create_adapter = MagicMock(
             side_effect=lambda platform, _config: adapters[platform]
@@ -147,7 +147,7 @@ class TestStartupPlatformIsolation:
                                     assert await runner.start() is True
 
         assert Platform.TELEGRAM in runner._failed_platforms
-        assert Platform.FEISHU in runner.adapters
+        assert Platform.MATRIX in runner.adapters
         assert Platform.TELEGRAM not in runner.adapters
         assert runner._create_adapter.call_count == 2
 
@@ -376,7 +376,7 @@ class TestPlatformReconnectWatcher:
         runner = _make_runner()
         runner._update_platform_runtime_status = MagicMock()
         runner._install_reconnected_adapter = AsyncMock()
-        platform = Platform("irc")  # bundled plugin platform (not a builtin adapter)
+        platform = Platform.MATRIX  # bundled plugin platform (not a builtin adapter)
         monkeypatch.setattr(runner, "_adapter_may_heal", lambda p, c: True)
         runner._failed_platforms[platform] = {
             "config": PlatformConfig(enabled=True), "attempts": 0, "next_retry": 0,
@@ -397,7 +397,7 @@ class TestPlatformReconnectWatcher:
             runner._failed_platforms.get(platform, {})["next_retry"] = 0
             await runner._reconnect_failed_platform(platform, time.monotonic())
 
-        assert rearmed == ["irc"] * 3  # a permanently broken plugin stops being re-imported after the cap
+        assert rearmed == ["matrix"] * 3  # a permanently broken plugin stops being re-imported after the cap
         assert on_loop and not any(on_loop)  # neither the re-arm nor the plugin load blocks the event loop
         runner._install_reconnected_adapter.assert_awaited_once_with(platform, adapter)
 
@@ -602,7 +602,7 @@ class TestPlatformSlashCommand:
     async def test_list_shows_connected_and_paused(self):
         runner = _make_runner()
         runner.adapters[Platform.DISCORD] = StubAdapter(platform=Platform.DISCORD)
-        runner._failed_platforms[Platform.WHATSAPP] = {
+        runner._failed_platforms[Platform.MATRIX] = {
             "config": PlatformConfig(enabled=True, token="t"),
             "attempts": 10,
             "next_retry": float("inf"),
@@ -611,21 +611,21 @@ class TestPlatformSlashCommand:
         }
         out = await runner._handle_platform_command(self._make_event("/platform list"))
         assert "discord" in out
-        assert "whatsapp" in out
+        assert "matrix" in out
         assert "not paired" in out
 
     @pytest.mark.asyncio
     async def test_pause_command_pauses_queued_platform(self):
         runner = _make_runner()
-        runner._failed_platforms[Platform.WHATSAPP] = {
+        runner._failed_platforms[Platform.MATRIX] = {
             "config": PlatformConfig(enabled=True, token="t"),
             "attempts": 2,
             "next_retry": time.monotonic() + 30,
         }
         await runner._handle_platform_command(
-            self._make_event("/platform pause whatsapp")
+            self._make_event("/platform pause matrix")
         )
-        assert runner._failed_platforms[Platform.WHATSAPP]["paused"] is True
+        assert runner._failed_platforms[Platform.MATRIX]["paused"] is True
 
 
 # --- Supervised task wrapper (_spawn_supervised) ---
@@ -725,7 +725,7 @@ class TestFatalHandoffCancellationProof:
         runner.adapters[Platform.TELEGRAM] = adapter
         # A healthy peer keeps self.adapters non-empty, so the existing
         # "no platforms remain" shutdown branches do not fire.
-        runner.adapters[Platform.FEISHU] = StubAdapter(platform=Platform.FEISHU)
+        runner.adapters[Platform.MATRIX] = StubAdapter(platform=Platform.MATRIX)
 
         await runner._handle_adapter_fatal_error(adapter)
 

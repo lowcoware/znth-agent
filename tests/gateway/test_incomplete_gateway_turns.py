@@ -15,9 +15,9 @@ from gateway.platforms.event import MessageEvent, ProcessingOutcome
 from gateway.session import SessionEntry, SessionSource, build_session_key
 
 
-class CaptureSlackAdapter(BasePlatformAdapter):
+class CaptureAdapter(BasePlatformAdapter):
     def __init__(self):
-        super().__init__(PlatformConfig(enabled=True, token="fake-token"), Platform.SLACK)
+        super().__init__(PlatformConfig(enabled=True, token="fake-token"), Platform.TELEGRAM)
         self.sent = []
         self.processing_hooks = []
 
@@ -36,7 +36,7 @@ class CaptureSlackAdapter(BasePlatformAdapter):
                 "metadata": metadata,
             }
         )
-        return SendResult(success=True, message_id="slack-1")
+        return SendResult(success=True, message_id="tg-1")
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         return None
@@ -73,21 +73,21 @@ def _make_incomplete_result() -> dict:
     }
 
 
-def _make_runner(adapter: CaptureSlackAdapter) -> gateway_run.GatewayRunner:
+def _make_runner(adapter: CaptureAdapter) -> gateway_run.GatewayRunner:
     runner = object.__new__(gateway_run.GatewayRunner)
     runner.config = GatewayConfig(
-        platforms={Platform.SLACK: PlatformConfig(enabled=True, token="fake-token")}
+        platforms={Platform.TELEGRAM: PlatformConfig(enabled=True, token="fake-token")}
     )
-    runner.adapters = {Platform.SLACK: adapter}
+    runner.adapters = {Platform.TELEGRAM: adapter}
     runner._voice_mode = {}
     runner.hooks = SimpleNamespace(emit=AsyncMock(), loaded_hooks=False)
     runner.session_store = MagicMock()
     runner.session_store.get_or_create_session.return_value = SessionEntry(
-        session_key="agent:main:slack:channel:C123:171717",
+        session_key="agent:main:telegram:channel:C123:171717",
         session_id="sess-1",
         created_at=datetime.now(),
         updated_at=datetime.now(),
-        platform=Platform.SLACK,
+        platform=Platform.TELEGRAM,
         chat_type="channel",
     )
     runner.session_store.load_transcript.return_value = []
@@ -114,7 +114,7 @@ def _make_event() -> MessageEvent:
     return MessageEvent(
         text="hello",
         source=SessionSource(
-            platform=Platform.SLACK,
+            platform=Platform.TELEGRAM,
             chat_id="C123",
             chat_type="channel",
             thread_id="171717",
@@ -125,8 +125,8 @@ def _make_event() -> MessageEvent:
 
 
 @pytest.mark.asyncio
-async def test_incomplete_codex_turn_closes_transcript_without_slack_delivery(monkeypatch, tmp_path):
-    adapter = CaptureSlackAdapter()
+async def test_incomplete_codex_turn_closes_transcript_without_telegram_delivery(monkeypatch, tmp_path):
+    adapter = CaptureAdapter()
     runner = _make_runner(adapter)
 
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
@@ -135,7 +135,7 @@ async def test_incomplete_codex_turn_closes_transcript_without_slack_delivery(mo
         "agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100,
     )
-    monkeypatch.setenv("SLACK_HOME_CHANNEL", "C123")
+    monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "C123")
 
     adapter.set_message_handler(runner._handle_message)
     adapter._keep_typing = lambda *_args, **_kwargs: asyncio.Event().wait()

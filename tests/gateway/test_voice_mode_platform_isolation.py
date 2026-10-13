@@ -1,9 +1,9 @@
 """Tests for voice mode platform isolation (bug #12542).
 
 Voice mode state stored as {chat_id: mode} without a platform namespace
-caused collisions: Telegram chat '123' and Slack chat '123' shared the
+caused collisions: Telegram chat '123' and Matrix chat '123' shared the
 same key. The fix prefixes keys with platform value: 'telegram:123' vs
-'slack:123'.
+'matrix:123'.
 """
 
 import json
@@ -26,12 +26,12 @@ class TestVoiceKeyHelper:
         """Same chat_id on different platforms yields different keys."""
         runner = _make_runner()
         key_telegram = runner._voice_key(Platform.TELEGRAM, "123")
-        key_slack = runner._voice_key(Platform.SLACK, "123")
+        key_matrix = runner._voice_key(Platform.MATRIX, "123")
         key_discord = runner._voice_key(Platform.DISCORD, "123")
-        assert key_telegram != key_slack
-        assert key_slack != key_discord
+        assert key_telegram != key_matrix
+        assert key_matrix != key_discord
         assert key_telegram == "telegram:123"
-        assert key_slack == "slack:123"
+        assert key_matrix == "matrix:123"
         assert key_discord == "discord:123"
 
 
@@ -80,7 +80,7 @@ class TestSyncVoiceModeStateToAdapter:
         runner._voice_mode = {
             "telegram:123": "off",      # Should sync
             "telegram:456": "all",       # Should NOT sync (mode is not "off")
-            "slack:123": "off",          # Should NOT sync (different platform)
+            "matrix:123": "off",          # Should NOT sync (different platform)
             "discord:789": "off",        # Should NOT sync (different platform)
         }
 

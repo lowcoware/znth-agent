@@ -27,7 +27,7 @@ from gateway.session import SessionSource
 
 def _event():
     source = SessionSource(
-        platform=Platform.SLACK,
+        platform=Platform.TELEGRAM,
         chat_id="C123CHAN",
         chat_type="group",
         thread_id=None,

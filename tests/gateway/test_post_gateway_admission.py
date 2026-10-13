@@ -32,10 +32,10 @@ def _runner(*, multiplex=False):
 
     runner = object.__new__(GatewayRunner)
     runner.config = GatewayConfig(
-        platforms={Platform.WHATSAPP: PlatformConfig(enabled=True)}, multiplex_profiles=multiplex,
+        platforms={Platform.TELEGRAM: PlatformConfig(enabled=True)}, multiplex_profiles=multiplex,
     )
     adapter = SimpleNamespace(send=AsyncMock())
-    runner.adapters = {Platform.WHATSAPP: adapter}
+    runner.adapters = {Platform.TELEGRAM: adapter}
     runner.pairing_store = MagicMock()
     runner.session_store = MagicMock()
     runner._is_user_authorized_for_source = lambda _s: True
@@ -51,17 +51,17 @@ def _runner(*, multiplex=False):
 
 def _event(text="queue my report", profile=None):
     source = SessionSource(
-        platform=Platform.WHATSAPP, user_id="15551234567@s.whatsapp.net",
-        chat_id="15551234567@s.whatsapp.net", user_name="tester", chat_type="dm", profile=profile,
+        platform=Platform.TELEGRAM, user_id="15551234567",
+        chat_id="15551234567", user_name="tester", chat_type="dm", profile=profile,
     )
     return MessageEvent(text=text, message_id="m1", source=source)
 
 
 @pytest.fixture(autouse=True)
 def _allow_all(monkeypatch):
-    for key in ("WHATSAPP_ALLOWED_USERS", "GATEWAY_ALLOWED_USERS", "GATEWAY_ALLOW_ALL_USERS"):
+    for key in ("TELEGRAM_ALLOWED_USERS", "GATEWAY_ALLOWED_USERS", "GATEWAY_ALLOW_ALL_USERS"):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("WHATSAPP_ALLOWED_USERS", "*")
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USERS", "*")
 
 
 @pytest.mark.asyncio
@@ -82,8 +82,8 @@ async def test_handled_consumes_the_turn_and_its_reply_is_delivered():
     # Snapshot-only payload: message + routing facts, never live runner/store handles.
     first = seen[0]
     assert first["text"] == "queue my report" and first["message_id"] == "m1"
-    assert first["platform"] == "whatsapp"
-    assert first["source"]["chat_id"] == "15551234567@s.whatsapp.net" and first["session_key"]
+    assert first["platform"] == "telegram"
+    assert first["source"]["chat_id"] == "15551234567" and first["session_key"]
     assert "gateway" not in first and "session_store" not in first
 
 

@@ -456,7 +456,7 @@ def _stream_event():
     return MessageEvent(
         text="send it again",
         message_type=MessageType.TEXT,
-        source=SessionSource(platform=Platform.SLACK, chat_id="C1", chat_type="group"),
+        source=SessionSource(platform=Platform.TELEGRAM, chat_id="C1", chat_type="group"),
         message_id="171.1",
     )
 

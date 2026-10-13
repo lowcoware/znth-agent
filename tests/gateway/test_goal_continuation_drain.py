@@ -31,7 +31,7 @@ class _DrainProbeAdapter(BasePlatformAdapter):
     """Minimal concrete adapter that records deliveries."""
 
     def __init__(self) -> None:
-        super().__init__(PlatformConfig(enabled=True, token="x"), Platform.SLACK)
+        super().__init__(PlatformConfig(enabled=True, token="x"), Platform.TELEGRAM)
         self.sent: list[str] = []
 
     async def start(self):  # pragma: no cover - unused
@@ -64,7 +64,7 @@ class _DrainProbeAdapter(BasePlatformAdapter):
 
 def _slack_thread_source() -> SessionSource:
     return SessionSource(
-        platform=Platform.SLACK,
+        platform=Platform.TELEGRAM,
         user_id="U1",
         chat_id="C1",
         user_name="tester",
@@ -167,7 +167,7 @@ async def test_runner_goal_hook_enqueues_into_the_key_the_adapter_drains(hermes_
     from gateway.config import GatewayConfig
 
     runner.config = GatewayConfig(
-        platforms={Platform.SLACK: PlatformConfig(enabled=True, token="x")},
+        platforms={Platform.TELEGRAM: PlatformConfig(enabled=True, token="x")},
     )
     runner._queued_events = {}
     session_entry = SessionEntry(
@@ -175,7 +175,7 @@ async def test_runner_goal_hook_enqueues_into_the_key_the_adapter_drains(hermes_
         session_id=f"goal-sess-{uuid.uuid4().hex[:8]}",
         created_at=datetime.now(),
         updated_at=datetime.now(),
-        platform=Platform.SLACK,
+        platform=Platform.TELEGRAM,
         chat_type="channel",
     )
     runner.session_store = MagicMock()
@@ -183,7 +183,7 @@ async def test_runner_goal_hook_enqueues_into_the_key_the_adapter_drains(hermes_
     runner.session_store._generate_session_key.return_value = adapter_key
 
     adapter = _DrainProbeAdapter()
-    runner.adapters = {Platform.SLACK: adapter}
+    runner.adapters = {Platform.TELEGRAM: adapter}
 
     GoalManager(session_entry.session_id).set("ship it")
     with patch(

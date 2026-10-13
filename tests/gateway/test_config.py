@@ -176,27 +176,13 @@ class TestGetConnectedPlatforms:
             platforms={
                 Platform.TELEGRAM: PlatformConfig(enabled=True, token="t"),
                 Platform.DISCORD: PlatformConfig(enabled=False, token="d"),
-                Platform.SLACK: PlatformConfig(enabled=True),  # no token
+                Platform.MATRIX: PlatformConfig(enabled=True),  # no token
             },
         )
         connected = config.get_connected_platforms()
         assert Platform.TELEGRAM in connected
         assert Platform.DISCORD not in connected
-        assert Platform.SLACK not in connected
-
-
-    def test_dingtalk_recognised_via_env_vars(self, monkeypatch):
-        """DingTalk configured via env vars (no extras) should still be
-        recognised as connected — covers the case where _apply_env_overrides
-        hasn't populated extras yet."""
-        monkeypatch.setenv("DINGTALK_CLIENT_ID", "env_cid")
-        monkeypatch.setenv("DINGTALK_CLIENT_SECRET", "env_sec")
-        config = GatewayConfig(
-            platforms={
-                Platform.DINGTALK: PlatformConfig(enabled=True, extra={}),
-            },
-        )
-        assert Platform.DINGTALK in config.get_connected_platforms()
+        assert Platform.MATRIX not in connected
 
 
 class TestStreamingConfig:
@@ -250,7 +236,7 @@ class TestGatewayConfigRoundtrip:
         config = GatewayConfig(
             unauthorized_dm_behavior="ignore",
             platforms={
-                Platform.WHATSAPP: PlatformConfig(
+                Platform.MATRIX: PlatformConfig(
                     enabled=True,
                     extra={"unauthorized_dm_behavior": "pair"},
                 ),
@@ -260,27 +246,7 @@ class TestGatewayConfigRoundtrip:
         restored = GatewayConfig.from_dict(config.to_dict())
 
         assert restored.unauthorized_dm_behavior == "ignore"
-        assert restored.platforms[Platform.WHATSAPP].extra["unauthorized_dm_behavior"] == "pair"
-
-    def test_email_defaults_to_ignore_for_unauthorized_dm_behavior(self):
-        config = GatewayConfig(
-            platforms={Platform.EMAIL: PlatformConfig(enabled=True)},
-        )
-
-        assert config.get_unauthorized_dm_behavior(Platform.EMAIL) == "ignore"
-
-    def test_email_can_opt_into_pairing_for_unauthorized_dm_behavior(self):
-        config = GatewayConfig(
-            platforms={
-                Platform.EMAIL: PlatformConfig(
-                    enabled=True,
-                    extra={"unauthorized_dm_behavior": "pair"},
-                ),
-            },
-        )
-
-        assert config.get_unauthorized_dm_behavior(Platform.EMAIL) == "pair"
-
+        assert restored.platforms[Platform.MATRIX].extra["unauthorized_dm_behavior"] == "pair"
 
 class TestLoadGatewayConfig:
     def test_platforms_env_refs_expanded_for_adapters(self, tmp_path, monkeypatch):
@@ -340,33 +306,14 @@ class TestLoadGatewayConfig:
             == "${WEBHOOK_SECRET_UNSET_FOR_TEST}"
         )
 
-    def test_slack_ignored_channels_config_sets_env_bridge(self, tmp_path, monkeypatch):
-        hermes_home = tmp_path / ".hermes"
-        hermes_home.mkdir()
-        (hermes_home / "config.yaml").write_text(
-            "slack:\n"
-            "  ignored_channels:\n"
-            "    - C0123456789\n"
-            "    - C0987654321\n",
-            encoding="utf-8",
-        )
-
-        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-        monkeypatch.delenv("SLACK_IGNORED_CHANNELS", raising=False)
-
-        load_gateway_config()
-
-        assert os.getenv("SLACK_IGNORED_CHANNELS") == "C0123456789,C0987654321"
-
-
     def test_typing_status_text_from_nested_platforms_block(self, tmp_path, monkeypatch):
-        """``platforms.slack.typing_status_text`` reaches PlatformConfig via
+        """``platforms.matrix.typing_status_text`` reaches PlatformConfig via
         _merge_platform_map + the from_dict top-level read."""
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
         (hermes_home / "config.yaml").write_text(
             "platforms:\n"
-            "  slack:\n"
+            "  matrix:\n"
             "    enabled: true\n"
             '    typing_status_text: "chasing yarn…"\n',
             encoding="utf-8",
@@ -376,7 +323,7 @@ class TestLoadGatewayConfig:
         config = load_gateway_config()
 
         assert (
-            config.platforms[Platform.SLACK].typing_status_text == "chasing yarn…"
+            config.platforms[Platform.MATRIX].typing_status_text == "chasing yarn…"
         )
 
     def test_multiplex_profiles_from_nested_gateway_section(self, tmp_path, monkeypatch):
@@ -883,39 +830,6 @@ class TestLoadGatewayConfig:
         assert os.environ.get("DISCORD_THREAD_REQUIRE_MENTION") == "true"
 
 
-    def test_bridges_nested_gateway_platforms_dingtalk_allowed_users_to_env(self, tmp_path, monkeypatch):
-        """gateway.platforms.dingtalk.extra.allowed_users must reach
-        DINGTALK_ALLOWED_USERS — it's the documented config.yaml alternative
-        to the env var (website/docs/user-guide/messaging/dingtalk.md), the
-        adapter reads it from PlatformConfig.extra, but gateway auth
-        (_is_user_authorized) only consults the env var.
-        """
-        hermes_home = tmp_path / ".hermes"
-        hermes_home.mkdir()
-        config_path = hermes_home / "config.yaml"
-        config_path.write_text(
-            "gateway:\n"
-            "  platforms:\n"
-            "    dingtalk:\n"
-            "      enabled: true\n"
-            "      extra:\n"
-            "        allowed_users:\n"
-            "          - user-id-1\n"
-            "          - user-id-2\n",
-            encoding="utf-8",
-        )
-
-        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-        monkeypatch.delenv("DINGTALK_ALLOWED_USERS", raising=False)
-
-        config = load_gateway_config()
-
-        assert config.platforms[Platform.DINGTALK].extra["allowed_users"] == [
-            "user-id-1",
-            "user-id-2",
-        ]
-        assert os.environ.get("DINGTALK_ALLOWED_USERS") == "user-id-1,user-id-2"
-
     @pytest.mark.parametrize("yaml_text", ["gateway:\n  allow_all_users: true\n", "allow_all_users: true\n"])
     def test_allow_all_users_yaml_reaches_the_authz_gate(self, tmp_path, monkeypatch, yaml_text):
         """Both spellings must open the gate for an unknown sender; before #110690 the key was inert
@@ -1083,7 +997,7 @@ class TestLoadGatewayConfig:
         config_path = hermes_home / "config.yaml"
         config_path.write_text(
             "unauthorized_dm_behavior: ignore\n"
-            "whatsapp:\n"
+            "matrix:\n"
             "  unauthorized_dm_behavior: pair\n",
             encoding="utf-8",
         )
@@ -1093,7 +1007,7 @@ class TestLoadGatewayConfig:
         config = load_gateway_config()
 
         assert config.unauthorized_dm_behavior == "ignore"
-        assert config.platforms[Platform.WHATSAPP].extra["unauthorized_dm_behavior"] == "pair"
+        assert config.platforms[Platform.MATRIX].extra["unauthorized_dm_behavior"] == "pair"
 
 
     def test_loads_telegram_rich_messages_from_gateway_platform_extra(self, tmp_path, monkeypatch):
@@ -1157,7 +1071,7 @@ class TestLoadGatewayConfig:
 
         monkeypatch.setenv("HERMES_HOME", str(default_home))
         monkeypatch.setenv("API_SERVER_ENABLED", "true")
-        monkeypatch.setenv("DISCORD_BOT_TOKEN", "default-token")
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "default-token")
 
         # Model the real multiplexed gateway: run.py flips the runtime flag at
         # startup (set_multiplex_active) BEFORE any secondary-profile config
@@ -1166,7 +1080,7 @@ class TestLoadGatewayConfig:
         # would no longer exercise the cross-profile isolation it's about.
         set_multiplex_active(True)
         home_token = set_hermes_home_override(str(secondary_home))
-        secret_token = set_secret_scope({"DISCORD_BOT_TOKEN": "worker-token"})
+        secret_token = set_secret_scope({"TELEGRAM_BOT_TOKEN": "worker-token"})
         try:
             config = load_gateway_config()
         finally:
@@ -1175,7 +1089,7 @@ class TestLoadGatewayConfig:
             set_multiplex_active(False)
 
         assert config.multiplex_profiles is True
-        assert config.platforms[Platform.DISCORD].token == "worker-token"
+        assert config.platforms[Platform.TELEGRAM].token == "worker-token"
         assert Platform.API_SERVER not in config.platforms
 
 
@@ -1236,41 +1150,6 @@ class TestWebhookPortBridging:
         wh = load_gateway_config().platforms[Platform.WEBHOOK]
         assert (wh.extra.get("port"), wh.extra.get("host"), wh.extra.get("secret")) == (9999, "127.0.0.2", "fixture")
 
-    def test_msgraph_webhook_port_host_secret_bridged_from_toplevel(self, tmp_path, monkeypatch):
-        """msgraph_webhook top-level port/host/secret must be bridged into extra,
-        with an explicit extra: value still winning over the top-level one."""
-        hermes_home = tmp_path / ".hermes"
-        hermes_home.mkdir()
-        config_path = hermes_home / "config.yaml"
-        config_path.write_text(
-            "platforms:\n"
-            "  msgraph_webhook:\n"
-            "    enabled: true\n"
-            "    host: 0.0.0.0\n"
-            "    port: 8651\n"
-            "    secret: toplevel-secret\n"
-            "    extra:\n"
-            "      client_state: my-client-state\n"
-            "      secret: extra-secret\n",
-            encoding="utf-8",
-        )
-        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-        monkeypatch.delenv("MSGRAPH_WEBHOOK_ENABLED", raising=False)
-        monkeypatch.delenv("MSGRAPH_WEBHOOK_PORT", raising=False)
-        monkeypatch.delenv("MSGRAPH_WEBHOOK_CLIENT_STATE", raising=False)
-
-        config = load_gateway_config()
-
-        assert Platform.MSGRAPH_WEBHOOK in config.platforms
-        ms = config.platforms[Platform.MSGRAPH_WEBHOOK]
-        assert ms.enabled is True
-        assert ms.extra.get("port") == 8651
-        assert ms.extra.get("host") == "0.0.0.0"
-        # explicit extra: wins over top-level
-        assert ms.extra.get("secret") == "extra-secret"
-        assert ms.extra.get("client_state") == "my-client-state"
-
-
 class TestHomeChannelEnvOverrides:
     """Home channel env vars should apply even when the platform was already
     configured via config.yaml (not just when credential env vars create it)."""
@@ -1278,67 +1157,10 @@ class TestHomeChannelEnvOverrides:
     def test_existing_platform_configs_accept_home_channel_env_overrides(self):
         cases = [
             (
-                Platform.SLACK,
-                PlatformConfig(enabled=True, token="xoxb-from-config"),
-                {"SLACK_HOME_CHANNEL": "C123", "SLACK_HOME_CHANNEL_NAME": "Ops"},
-                ("C123", "Ops"),
-            ),
-            (
-                Platform.WHATSAPP,
-                PlatformConfig(enabled=True),
-                {
-                    "WHATSAPP_HOME_CHANNEL": "1234567890@lid",
-                    "WHATSAPP_HOME_CHANNEL_NAME": "Owner DM",
-                },
-                ("1234567890@lid", "Owner DM"),
-            ),
-            (
-                Platform.SIGNAL,
-                PlatformConfig(
-                    enabled=True,
-                    extra={"http_url": "http://localhost:9090", "account": "+15551234567"},
-                ),
-                {"SIGNAL_HOME_CHANNEL": "+1555000", "SIGNAL_HOME_CHANNEL_NAME": "Phone"},
-                ("+1555000", "Phone"),
-            ),
-            (
-                Platform.MATTERMOST,
-                PlatformConfig(
-                    enabled=True,
-                    token="mm-token",
-                    extra={"url": "https://mm.example.com"},
-                ),
-                {"MATTERMOST_HOME_CHANNEL": "ch_abc123", "MATTERMOST_HOME_CHANNEL_NAME": "General"},
-                ("ch_abc123", "General"),
-            ),
-            (
-                Platform.MATRIX,
-                PlatformConfig(
-                    enabled=True,
-                    token="syt_abc123",
-                    extra={"homeserver": "https://matrix.example.org"},
-                ),
-                {"MATRIX_HOME_ROOM": "!room123:example.org", "MATRIX_HOME_ROOM_NAME": "Bot Room"},
-                ("!room123:example.org", "Bot Room"),
-            ),
-            (
-                Platform.EMAIL,
-                PlatformConfig(
-                    enabled=True,
-                    extra={
-                        "address": "hermes@test.com",
-                        "imap_host": "imap.test.com",
-                        "smtp_host": "smtp.test.com",
-                    },
-                ),
-                {"EMAIL_HOME_ADDRESS": "user@test.com", "EMAIL_HOME_ADDRESS_NAME": "Inbox"},
-                ("user@test.com", "Inbox"),
-            ),
-            (
-                Platform.SMS,
-                PlatformConfig(enabled=True, api_key="token_abc"),
-                {"SMS_HOME_CHANNEL": "+15559876543", "SMS_HOME_CHANNEL_NAME": "My Phone"},
-                ("+15559876543", "My Phone"),
+                Platform.TELEGRAM,
+                PlatformConfig(enabled=True, token="t"),
+                {"TELEGRAM_HOME_CHANNEL": "555", "TELEGRAM_HOME_CHANNEL_NAME": "Home"},
+                ("555", "Home"),
             ),
         ]
 
@@ -1548,15 +1370,10 @@ class TestWebhookEnvOverride:
 
         The fix honors the explicit disable, flagged by ``_enabled_explicit``
         in the platform's extra (set when the config.yaml pins enabled).
-        The MSGRAPH_WEBHOOK branch shares the shape and the fix.
         """
         config = GatewayConfig(
             platforms={
                 Platform.WEBHOOK: PlatformConfig(
-                    enabled=False,
-                    extra={"_enabled_explicit": True},
-                ),
-                Platform.MSGRAPH_WEBHOOK: PlatformConfig(
                     enabled=False,
                     extra={"_enabled_explicit": True},
                 ),
@@ -1570,8 +1387,6 @@ class TestWebhookEnvOverride:
                 "WEBHOOK_ENABLED": "true",
                 "WEBHOOK_PORT": "9999",
                 "WEBHOOK_SECRET": "shared-secret",
-                "MSGRAPH_WEBHOOK_ENABLED": "true",
-                "MSGRAPH_WEBHOOK_PORT": "9998",
             },
             clear=True,
         ):
@@ -1579,8 +1394,6 @@ class TestWebhookEnvOverride:
 
         # Explicit disable wins over the env-var presence.
         assert config.platforms[Platform.WEBHOOK].enabled is False
-        assert config.platforms[Platform.MSGRAPH_WEBHOOK].enabled is False
-        assert config.platforms[Platform.MSGRAPH_WEBHOOK].extra.get("port") == 9998
         # Port/secret are still wired through for the shared listener.
         assert config.platforms[Platform.WEBHOOK].extra.get("port") == 9999
         assert (
@@ -1625,20 +1438,10 @@ class TestTopLevelBlockVsAuthoredExtra:
     """The semantic YAML owner wins at both the extra and adapter/env boundaries."""
 
     @pytest.mark.parametrize("platform,block,authored,global_value,operator_env", [
-        ("slack", {"require_mention": False, "strict_mention": False, "thread_require_mention": False,
-                   "free_response_channels": [], "allow_bots": False},
-         {"require_mention": True, "strict_mention": True, "thread_require_mention": True,
-          "free_response_channels": ["C1", "C2"]}, None, None),
-        ("slack", {"extra": {"strict_mention": False, "allow_bots": True}},
-         {"strict_mention": True}, None, None),
-        ("slack", {"allow_bots": True}, {"strict_mention": True}, None, None),
-        ("slack", {"strict_mention": True, "extra": {"strict_mention": False}}, {}, None, None),
-        ("slack", {"strict_mention": True}, {"strict_mention": True}, None, None),
         ("slack", {"reply_to_mode": "all"}, {}, None, None),
         ("telegram", {"extra": {"require_mention": False}}, {"require_mention": True}, False, None),
         ("telegram", {"extra": {"require_mention": False}}, {"require_mention": True}, False, "false"),
-    ], ids=["direct", "subdict", "fill", "block-own-extra", "equal", "no-bridged-key",
-            "telegram-global-fallback", "operator-env"])
+    ], ids=["no-bridged-key", "telegram-global-fallback", "operator-env"])
     def test_yaml_owner_reaches_adapter(self, platform, block, authored, global_value,
                                        operator_env, tmp_path, monkeypatch, caplog):
         import json
@@ -1689,9 +1492,7 @@ class TestTopLevelBlockVsAuthoredExtra:
             assert os.environ["TELEGRAM_REQUIRE_MENTION"] == (operator_env or "true")
 
     @pytest.mark.parametrize("source,platform", [
-        *((source, "slack") for source in ("legacy", "root", "root-extra", "nested",
-          "managed-extra", "mixed", "dict-disjoint", "dict-overlap", "root-sibling")),
-        ("root-sibling", "discord"), ("root-sibling", "telegram"),
+        ("root-sibling", "telegram"),
     ])
     def test_configuration_layer_owner(self, source, platform, tmp_path, monkeypatch, caplog):
         import json

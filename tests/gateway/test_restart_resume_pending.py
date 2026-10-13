@@ -228,9 +228,9 @@ class TestGetOrCreateResumePending:
         """Interrupted platform mappings must not stay pinned to compressed roots."""
         store = _make_store(tmp_path)
         source = _make_source(
-            platform=Platform.WEIXIN,
-            chat_id="wx-chat",
-            user_id="wx-user",
+            platform=Platform.TELEGRAM,
+            chat_id="tg-chat",
+            user_id="tg-user",
         )
         first = store.get_or_create_session(source)
         original_sid = first.session_id

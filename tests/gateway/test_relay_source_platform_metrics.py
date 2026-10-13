@@ -29,18 +29,18 @@ def _inbound(adapter, platform, chat_id):
 def test_multiplatform_relay_replies_are_labelled_by_the_inbound_platform(rows):
     relay = _relay()
     discord = _inbound(relay, Platform.DISCORD, "c1")
-    slack = _inbound(relay, Platform.SLACK, "c2")
+    matrix = _inbound(relay, Platform.MATRIX, "c2")
     smg.start_reply_clock(discord.source)
     assert asyncio.run(GatewayStreamConsumer(relay, "c1", StreamConsumerConfig(cursor=""))._send_or_edit("chunk"))
-    smg.start_reply_clock(slack.source)
-    asyncio.run(relay.send_final_ledgered(slack, "k", "final answer", {}, reply_to=None))
+    smg.start_reply_clock(matrix.source)
+    asyncio.run(relay.send_final_ledgered(matrix, "k", "final answer", {}, reply_to=None))
 
     assert rows("hermes.gateway.reply_latency") == [
         {"first_response_bucket": "lt_2s", "platform": "discord"},
-        {"first_response_bucket": "lt_2s", "platform": "slack"},
+        {"first_response_bucket": "lt_2s", "platform": "matrix"},
     ]
     # Streamed chunks send directly; the final reply is the ledgered, counted delivery.
-    assert rows("hermes.platform.delivery") == [{"failure_class": "none", "outcome": "sent", "platform": "slack"}]
+    assert rows("hermes.platform.delivery") == [{"failure_class": "none", "outcome": "sent", "platform": "matrix"}]
 
 
 def test_single_platform_relay_inbound_is_labelled_by_the_connector_platform(rows):
@@ -69,7 +69,7 @@ def test_an_unresolvable_relay_chat_keeps_the_relay_label(rows, chat_platform):
 
 def test_an_unstamped_chat_on_a_multiplatform_connector_is_not_labelled_as_its_primary(rows):
     relay = _relay("discord")
-    relay._transport._identities = [("discord", "bot-a"), ("slack", "bot-b")]
+    relay._transport._identities = [("discord", "bot-a"), ("matrix", "bot-b")]
     event = _inbound(relay, Platform.RELAY, "c7")
     smg.start_reply_clock(event.source)
     asyncio.run(relay.send_final_ledgered(event, "k", "final answer", {}, reply_to=None))

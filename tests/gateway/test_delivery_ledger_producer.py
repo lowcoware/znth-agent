@@ -32,7 +32,7 @@ class _Adapter(BasePlatformAdapter):  # type: ignore[misc]
     """Minimal concrete adapter driving the real base-class pipeline."""
 
     def __init__(self):
-        super().__init__(PlatformConfig(enabled=True), Platform.SLACK)
+        super().__init__(PlatformConfig(enabled=True), Platform.DISCORD)
         self.sent = []
 
     async def connect(self, *, is_reconnect: bool = False):  # pragma: no cover
@@ -54,7 +54,7 @@ def _event(text="hello agent"):
         text=text,
         message_type=MessageType.TEXT,
         source=SessionSource(
-            platform=Platform.SLACK, chat_id="C1", chat_type="channel"
+            platform=Platform.DISCORD, chat_id="C1", chat_type="channel"
         ),
         message_id="msg-42",
     )
@@ -95,7 +95,7 @@ def _blocking_probe():
 
 async def _run(adapter, event, response="final answer"):
     adapter._message_handler = AsyncMock(return_value=response)
-    session_key = "agent:main:slack:channel:C1"
+    session_key = "agent:main:discord:channel:C1"
     adapter._active_sessions[session_key] = asyncio.Event()
     await adapter._process_message_background(event, session_key)
 
@@ -148,7 +148,7 @@ class TestProducerHook:
         assert _rows()[0][1] == "failed"
         assert _rows()[0][3] == "reviewer"
         runner._redeliver_failed_obligations_for_platform.assert_awaited_once_with(
-            Platform.SLACK, profile="reviewer"
+            Platform.DISCORD, profile="reviewer"
         )
 
 

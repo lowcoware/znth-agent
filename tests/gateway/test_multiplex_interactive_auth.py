@@ -28,8 +28,6 @@ def mux_home(tmp_path, monkeypatch):
         "TELEGRAM_ALLOW_BOTS",
         "GATEWAY_ALLOW_ALL_USERS",
         "GATEWAY_ALLOWED_USERS",
-        "SLACK_ALLOW_ALL_USERS",
-        "SLACK_ALLOWED_USERS",
     ):
         monkeypatch.delenv(key, raising=False)
     prev = secret_scope.is_multiplex_active()
@@ -157,39 +155,6 @@ def test_secondary_callback_allowlist_follows_env_edits(mux_home):
     assert tg._is_callback_user_authorized("777", chat_id="111", chat_type="private") is False
     env_path.write_text("TELEGRAM_ALLOWED_USERS=555,777\n", encoding="utf-8")  # operator adds a user at runtime
     assert tg._is_callback_user_authorized("777", chat_id="111", chat_type="private") is True
-
-
-def test_slack_interactive_auth_prefers_wired_profile_check(mux_home, monkeypatch):
-    """#72657: a multiplexed Slack adapter's button gate resolves through the
-    wired ``_make_adapter_auth_check`` for its own profile; the DEFAULT
-    profile's process-env allow-all never leaks in — not through the
-    injected path, and not through the env-only fallback either."""
-    from gateway.run import _profile_runtime_scope
-    from plugins.platforms.slack.adapter import SlackAdapter
-
-    runner = _runner(mux_home)
-    runner.adapters = {}
-    sec_home = mux_home / "profiles" / "secondary"
-    (sec_home / ".env").write_text("SLACK_ALLOWED_USERS=U_SEC\n", encoding="utf-8")
-    monkeypatch.setenv("SLACK_ALLOW_ALL_USERS", "true")
-
-    def slack(with_check):
-        sl = object.__new__(SlackAdapter)
-        sl.config = PlatformConfig(enabled=True, extra={})
-        sl._authorization_check = None
-        sl._message_handler = runner._make_profile_message_handler("secondary")
-        if with_check:
-            runner._profile_adapters = {"secondary": {Platform.SLACK: sl}}
-            sl.set_authorization_check(
-                runner._make_adapter_auth_check(Platform.SLACK, profile_name="secondary")
-            )
-        return sl
-
-    with _profile_runtime_scope(sec_home):
-        wired = slack(True)
-        assert wired._is_interactive_user_authorized("U_SEC", channel_id="C1") is True
-        assert wired._is_interactive_user_authorized("U_X", channel_id="C1") is False
-        assert slack(False)._is_interactive_user_authorized("U_X", channel_id="C1") is False
 
 
 def test_authorization_adapter_ignores_per_turn_active_profile(mux_home):

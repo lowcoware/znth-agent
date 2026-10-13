@@ -165,9 +165,9 @@ async def test_one_broken_profile_does_not_starve_the_rest(multiplex_runner, mon
     ok = _adapter()
     runner._profile_configs = {
         "b": _home_config(Platform.TELEGRAM, "b-home"),
-        "c": _home_config(Platform.SLACK, "c-home"),
+        "c": _home_config(Platform.MATRIX, "c-home"),
     }
-    runner._profile_adapters = {"b": {Platform.TELEGRAM: _adapter()}, "c": {Platform.SLACK: ok}}
+    runner._profile_adapters = {"b": {Platform.TELEGRAM: _adapter()}, "c": {Platform.MATRIX: ok}}
     real = gateway_delivery.resolve_delivery_transport
 
     def resolve(platform, config, adapters):

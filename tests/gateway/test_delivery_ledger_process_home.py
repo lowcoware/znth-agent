@@ -25,7 +25,7 @@ from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms.event import MessageEvent, MessageType
 from gateway.session import SessionSource
 
-SESSION_KEY = "agent:research:slack:channel:C1"
+SESSION_KEY = "agent:research:telegram:channel:C1"
 ANSWER = "the final answer"
 
 
@@ -33,7 +33,7 @@ class _ServedAdapter(BasePlatformAdapter):
     """The served profile's own bot; its sends succeed, so the ledger is all that is observed."""
 
     def __init__(self):
-        super().__init__(PlatformConfig(enabled=True), Platform.SLACK)
+        super().__init__(PlatformConfig(enabled=True), Platform.TELEGRAM)
         self._owner_profile = "research"
         self.sent = []
 
@@ -69,7 +69,7 @@ def _runner(adapter):
 
     runner = object.__new__(GatewayRunner)
     runner.adapters = {}
-    runner._profile_adapters = {"research": {Platform.SLACK: adapter}}
+    runner._profile_adapters = {"research": {Platform.TELEGRAM: adapter}}
     runner._active_profile_name = lambda: "default"
     store = MagicMock()
     store.clear_resume_pending = AsyncMock()
@@ -86,7 +86,7 @@ async def test_boot_sweep_redelivers_a_reply_recorded_under_a_served_profile_sco
     adapter = _ServedAdapter()
     event = MessageEvent(
         text="hi", message_type=MessageType.TEXT, message_id="m-1",
-        source=SessionSource(platform=Platform.SLACK, chat_id="C1", chat_type="channel"))
+        source=SessionSource(platform=Platform.TELEGRAM, chat_id="C1", chat_type="channel"))
     # Stands in for the receive loop: a task created while the adapter connects under the scope.
     with _profile_runtime_scope(launch_home / "profiles" / "research", hydrate_secrets=False):
         record = asyncio.create_task(

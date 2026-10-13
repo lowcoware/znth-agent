@@ -30,11 +30,11 @@ def _fresh_db(tmp_path, monkeypatch):
     yield
 
 
-def _record(oid="ob-1", session_key="agent:main:slack:channel:C1", **kw):
+def _record(oid="ob-1", session_key="agent:main:matrix:channel:C1", **kw):
     dl.record_obligation(
         obligation_id=oid,
         session_key=session_key,
-        platform=kw.get("platform", "slack"),
+        platform=kw.get("platform", "matrix"),
         chat_id=kw.get("chat_id", "C1"),
         thread_id=kw.get("thread_id", "171.001"),
         content=kw.get("content", "the final answer"),
@@ -225,8 +225,8 @@ class TestRuntimeFailedSweep:
         dl.mark_failed("ob-1", "send_path_degraded")
         _record(
             oid="ob-2",
-            session_key="agent:main:slack:channel:C2",
-            platform="slack",
+            session_key="agent:main:matrix:channel:C2",
+            platform="matrix",
             chat_id="C2",
         )
         dl.mark_failed("ob-2", "send_path_degraded")
@@ -393,7 +393,7 @@ class TestGatewayRedeliverySweep:
         from gateway.run import GatewayRunner
 
         runner = object.__new__(GatewayRunner)
-        runner.adapters = {Platform.SLACK: adapter} if adapter else {}
+        runner.adapters = {Platform.MATRIX: adapter} if adapter else {}
         runner._profile_adapters = {}
         runner._active_profile_name = lambda: "default"
         _store = MagicMock()
@@ -426,7 +426,7 @@ class TestGatewayRedeliverySweep:
         assert sent["metadata"] == {"thread_id": "171.001"}
         assert _row("ob-1")["state"] == "delivered"
         runner._async_session_store.clear_resume_pending.assert_awaited_once_with(
-            "agent:main:slack:channel:C1"
+            "agent:main:matrix:channel:C1"
         )
 
     @pytest.mark.asyncio
@@ -434,7 +434,7 @@ class TestGatewayRedeliverySweep:
         from gateway.config import Platform
 
         _record(
-            session_key="agent:routed-profile:slack:channel:C1",
+            session_key="agent:routed-profile:matrix:channel:C1",
             adapter_profile="credential-owner",
         )
         _orphan("ob-1")
@@ -442,7 +442,7 @@ class TestGatewayRedeliverySweep:
         owner_adapter = self._adapter()
         runner = self._runner(default_adapter)
         runner._profile_adapters = {
-            "credential-owner": {Platform.SLACK: owner_adapter}
+            "credential-owner": {Platform.MATRIX: owner_adapter}
         }
 
         n = await runner._redeliver_pending_obligations()
@@ -454,7 +454,7 @@ class TestGatewayRedeliverySweep:
     @pytest.mark.asyncio
     async def test_startup_does_not_claim_disconnected_transport_owner(self):
         _record(
-            session_key="agent:routed-profile:slack:channel:C1",
+            session_key="agent:routed-profile:matrix:channel:C1",
             adapter_profile="credential-owner",
         )
         _orphan("ob-1")
@@ -535,22 +535,22 @@ class TestGatewayRedeliverySweep:
         await runner._redeliver_claimed_obligations(claimed)
 
         assert _row("ob-1")["state"] == "failed" and _row("ob-1")["attempts"] == 0
-        assert [r["obligation_id"] for r in dl.sweep_failed_for_runtime("slack")] == ["ob-1"]
+        assert [r["obligation_id"] for r in dl.sweep_failed_for_runtime("matrix")] == ["ob-1"]
 
     @pytest.mark.asyncio
     async def test_runtime_failed_redelivery_clears_resume_before_send(self):
         from gateway.config import Platform
 
-        _record(platform="slack")
+        _record(platform="matrix")
         dl.mark_failed("ob-1", "send_path_degraded")
         adapter = self._adapter()
         runner = self._runner(adapter)
 
-        n = await runner._redeliver_failed_obligations_for_platform(Platform.SLACK)
+        n = await runner._redeliver_failed_obligations_for_platform(Platform.MATRIX)
 
         assert n == 1
         runner._async_session_store.clear_resume_pending.assert_awaited_once_with(
-            "agent:main:slack:channel:C1"
+            "agent:main:matrix:channel:C1"
         )
         assert adapter.send.await_count == 1
         assert adapter.send.call_args.kwargs["content"].startswith(
@@ -563,8 +563,8 @@ class TestGatewayRedeliverySweep:
         from gateway.config import Platform
 
         _record(
-            session_key="agent:reviewer:slack:channel:C1",
-            platform="slack",
+            session_key="agent:reviewer:matrix:channel:C1",
+            platform="matrix",
             adapter_profile="reviewer",
         )
         dl.mark_failed("ob-1", "send_path_degraded")
@@ -572,11 +572,11 @@ class TestGatewayRedeliverySweep:
         reviewer_adapter = self._adapter()
         runner = self._runner(default_adapter)
         runner._profile_adapters = {
-            "reviewer": {Platform.SLACK: reviewer_adapter}
+            "reviewer": {Platform.MATRIX: reviewer_adapter}
         }
 
         n = await runner._redeliver_failed_obligations_for_platform(
-            Platform.SLACK, profile="reviewer"
+            Platform.MATRIX, profile="reviewer"
         )
 
         assert n == 1
@@ -587,11 +587,11 @@ class TestGatewayRedeliverySweep:
     async def test_runtime_missing_adapter_releases_unsent_claim(self):
         from gateway.config import Platform
 
-        _record(platform="slack")
+        _record(platform="matrix")
         dl.mark_failed("ob-1", "send_path_degraded")
         runner = self._runner()
 
-        n = await runner._redeliver_failed_obligations_for_platform(Platform.SLACK)
+        n = await runner._redeliver_failed_obligations_for_platform(Platform.MATRIX)
 
         assert n == 0
         assert _row("ob-1")["state"] == "failed"
@@ -602,7 +602,7 @@ class TestGatewayRedeliverySweep:
     async def test_runtime_clear_failure_does_not_send_or_lose_retry(self):
         from gateway.config import Platform
 
-        _record(platform="slack")
+        _record(platform="matrix")
         dl.mark_failed("ob-1", "send_path_degraded")
         adapter = self._adapter()
         runner = self._runner(adapter)
@@ -610,7 +610,7 @@ class TestGatewayRedeliverySweep:
             "session store unavailable"
         )
 
-        n = await runner._redeliver_failed_obligations_for_platform(Platform.SLACK)
+        n = await runner._redeliver_failed_obligations_for_platform(Platform.MATRIX)
 
         assert n == 0
         adapter.send.assert_not_awaited()
@@ -671,7 +671,7 @@ class TestGatewayRedeliverySweep:
             await asyncio.sleep(0)
 
         runner._async_session_store.clear_resume_pending.assert_awaited_once_with(
-            "agent:main:slack:channel:C1"
+            "agent:main:matrix:channel:C1"
         )
         assert not task.done()
 
@@ -725,11 +725,11 @@ class TestUnconnectedPlatformKeepsItsBudget:
     connect must not consume the row's redelivery budget."""
 
     @staticmethod
-    def _runner_without_slack():
+    def _runner_without_matrix():
         from gateway.run import GatewayRunner
 
         runner = object.__new__(GatewayRunner)
-        runner.adapters = {}  # slack failed to connect this boot
+        runner.adapters = {}  # matrix failed to connect this boot
         _store = MagicMock()
         _store.clear_resume_pending = AsyncMock()
         _store._store = None
@@ -739,12 +739,12 @@ class TestUnconnectedPlatformKeepsItsBudget:
 
     @pytest.mark.asyncio
     async def test_row_survives_boots_where_its_platform_is_down(self):
-        _record(platform="slack")
+        _record(platform="matrix")
         dl.mark_attempting("ob-1")
 
         for _ in range(dl.MAX_ATTEMPTS + 1):
             _orphan("ob-1")
-            runner = self._runner_without_slack()
+            runner = self._runner_without_matrix()
             assert await runner._redeliver_pending_obligations() == 0
 
         assert _row("ob-1")["state"] != "abandoned", (

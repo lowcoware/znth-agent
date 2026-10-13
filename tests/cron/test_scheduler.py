@@ -309,7 +309,7 @@ class TestRoutingIntents:
 
         monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "-111")
         monkeypatch.setenv("DISCORD_HOME_CHANNEL", "-222")
-        monkeypatch.setenv("SLACK_HOME_CHANNEL", "C333")
+        monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "C333")
         # Sanity: platforms without the env var must NOT appear in the expansion.
         monkeypatch.delenv("SIGNAL_HOME_CHANNEL", raising=False)
         monkeypatch.delenv("MATRIX_HOME_ROOM", raising=False)
@@ -319,7 +319,7 @@ class TestRoutingIntents:
 
         assert "telegram" in platforms
         assert "discord" in platforms
-        assert "slack" in platforms
+        assert "telegram" in platforms
         assert "signal" not in platforms
         assert "matrix" not in platforms
 
@@ -338,13 +338,13 @@ class TestDeliverResultWrapping:
         return media_file.resolve()
 
     def test_relay_fronted_home_uses_relay_config_and_live_adapter(self, monkeypatch, tmp_path):
-        """Persisted Slack home survives restart without native Slack config."""
+        """Persisted Telegram home survives restart without native Telegram config."""
         from concurrent.futures import Future
 
         from gateway.config import GatewayConfig, HomeChannel, Platform, PlatformConfig
 
         relay = MagicMock()
-        relay.fronts_platform.side_effect = lambda platform: platform == Platform.SLACK
+        relay.fronts_platform.side_effect = lambda platform: platform == Platform.TELEGRAM
         relay.send_for_platform = AsyncMock(return_value=MagicMock(success=True))
         relay.send_voice = AsyncMock(return_value=MagicMock(success=True))
         relay.supports_inchannel_continuable = False
@@ -355,10 +355,10 @@ class TestDeliverResultWrapping:
         config = GatewayConfig(
             platforms={
                 Platform.RELAY: PlatformConfig(enabled=True),
-                Platform.SLACK: PlatformConfig(
+                Platform.TELEGRAM: PlatformConfig(
                     enabled=False,
                     home_channel=HomeChannel(
-                        platform=Platform.SLACK,
+                        platform=Platform.TELEGRAM,
                         chat_id="D123",
                         name="Owner DM",
                         user_id="U123",
@@ -381,10 +381,10 @@ class TestDeliverResultWrapping:
 
         standalone_send = AsyncMock(return_value={"success": True})
         media_path = self._safe_media_path(tmp_path, monkeypatch, "relay-voice.mp3")
-        monkeypatch.setenv("SLACK_HOME_CHANNEL", "D123")
+        monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "D123")
         job = {
             "id": "relay-cron",
-            "deliver": "slack",
+            "deliver": "telegram",
         }
 
         with (
@@ -403,11 +403,11 @@ class TestDeliverResultWrapping:
         assert result is None
         relay.send_for_platform.assert_awaited_once()
         args = relay.send_for_platform.await_args.args
-        assert args[:3] == (Platform.SLACK, "D123", "scheduled result")
+        assert args[:3] == (Platform.TELEGRAM, "D123", "scheduled result")
         assert relay.send_for_platform.await_args.kwargs["metadata"]["user_id"] == "U123"
         relay.send_voice.assert_awaited_once()
         media_metadata = relay.send_voice.await_args.kwargs["metadata"]
-        assert media_metadata["_relay_logical_platform"] == "slack"
+        assert media_metadata["_relay_logical_platform"] == "telegram"
         assert media_metadata["user_id"] == "U123"
         standalone_send.assert_not_awaited()
 
@@ -2167,7 +2167,7 @@ class TestCronContinuableSurfaceInChannel:
 
     Design: decisions.md D1/D2/D6 + F5. The scheduler reads the per-platform key
     generically from pconfig.extra; the in_channel branch is gated on the
-    adapter capability flag ``supports_inchannel_continuable`` (Slack=True,
+    adapter capability flag ``supports_inchannel_continuable`` (Telegram=True,
     others fail SAFE to thread). In in_channel mode the thread-open branch is
     SKIPPED (thread_id stays None), then ``_seed_cron_channel_session`` CREATES
     the flat shared-channel session and mirrors the brief into it (the shipped
@@ -2175,26 +2175,26 @@ class TestCronContinuableSurfaceInChannel:
     otherwise absent for a chat_postMessage delivery).
     """
 
-    def _slack_cfg(self, extra):
-        """A mock GatewayConfig with a Slack pconfig carrying ``extra``."""
+    def _telegram_cfg(self, extra):
+        """A mock GatewayConfig with a Telegram pconfig carrying ``extra``."""
         from gateway.config import Platform
 
         pconfig = MagicMock()
         pconfig.enabled = True
         pconfig.extra = extra
         mock_cfg = MagicMock()
-        mock_cfg.platforms = {Platform.SLACK: pconfig}
+        mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
         return mock_cfg
 
     def _run_inchannel_delivery(self, extra, adapter, *, mirror_ok=True, origin=None,
                                 attach_to_session=True):
-        """Drive _deliver_result down the live-adapter path for a Slack
+        """Drive _deliver_result down the live-adapter path for a Telegram
         channel-origin job with the given ``extra`` config. Returns the
         _open_continuable_cron_thread mock and the mirror_to_session mock."""
         from gateway.config import Platform
         from concurrent.futures import Future
 
-        mock_cfg = self._slack_cfg(extra)
+        mock_cfg = self._telegram_cfg(extra)
 
         loop = MagicMock()
         loop.is_running.return_value = True
@@ -2215,7 +2215,7 @@ class TestCronContinuableSurfaceInChannel:
             # Channel origin: no thread_id (flat channel message scheduled it).
             # Carries the scheduling user's id — the in_channel seed must key
             # the flat channel session to THIS user (see build_session_key).
-            "origin": origin or {"platform": "slack", "chat_id": "C123", "user_id": "U_HUMAN"},
+            "origin": origin or {"platform": "telegram", "chat_id": "C123", "user_id": "U_HUMAN"},
             # Opt into the continuable mirror (parameterized: the seed must
             # NOT depend on this — see the no-attach regression test).
             "attach_to_session": attach_to_session,
@@ -2228,11 +2228,11 @@ class TestCronContinuableSurfaceInChannel:
              patch("gateway.mirror.mirror_to_session", return_value=mirror_ok) as mirror_mock:
             _deliver_result(
                 job, "Here is today's brief.",
-                adapters={Platform.SLACK: adapter}, loop=loop,
+                adapters={Platform.TELEGRAM: adapter}, loop=loop,
             )
         return open_thread_mock, mirror_mock
 
-    def _slack_adapter(self, supports_inchannel=True, with_store=True):
+    def _telegram_adapter(self, supports_inchannel=True, with_store=True):
         adapter = AsyncMock()
         adapter.send.return_value = MagicMock(
             success=True, message_id="msg_1", raw_response=None,
@@ -2255,7 +2255,7 @@ class TestCronContinuableSurfaceInChannel:
 
     def test_in_channel_skips_thread_open(self):
         """G2: in_channel mode must NOT open a handoff thread."""
-        adapter = self._slack_adapter(supports_inchannel=True)
+        adapter = self._telegram_adapter(supports_inchannel=True)
         open_thread_mock, _ = self._run_inchannel_delivery(
             {"cron_continuable_surface": "in_channel"}, adapter,
         )
@@ -2278,7 +2278,7 @@ class TestCronContinuableSurfaceInChannel:
 
         with patch("gateway.mirror.mirror_to_session", return_value=True) as mirror_mock:
             ok = _seed_cron_channel_session(
-                {"id": "j1", "name": "Brief"}, adapter, "slack", "C123",
+                {"id": "j1", "name": "Brief"}, adapter, "telegram", "C123",
                 "Daily brief", is_dm=False, user_id="U_HUMAN", chat_name="ops",
             )
         assert ok is True
@@ -2288,7 +2288,7 @@ class TestCronContinuableSurfaceInChannel:
         # What a plain top-level channel reply (reply_in_thread:false → thread
         # None) from the same user resolves to:
         inbound = SessionSource(
-            platform=Platform.SLACK, chat_id="C123", chat_type="group",
+            platform=Platform.TELEGRAM, chat_id="C123", chat_type="group",
             user_id="U_HUMAN", thread_id=None,
         )
         assert seed_key == build_session_key(inbound), (
@@ -2312,10 +2312,10 @@ class TestCronContinuableSurfaceInChannel:
         default-surface mirror behavior; it must not be required here."""
         from cron.scheduler import _deliver_result
 
-        adapter = self._slack_adapter(supports_inchannel=True)
+        adapter = self._telegram_adapter(supports_inchannel=True)
         with patch("cron.scheduler_delivery._seed_cron_channel_session", return_value=True) as seed_mock:
             self._run_inchannel_delivery(
-                {"slack": {"cron_continuable_surface": "in_channel"}}, adapter,
+                {"telegram": {"cron_continuable_surface": "in_channel"}}, adapter,
                 attach_to_session=False,
             )
         seed_mock.assert_called_once()
@@ -2342,16 +2342,16 @@ class TestCronContinuableSurfaceInChannel:
                 captured["target"] = target
                 return {"success": True, "message_id": "msg_1"}
 
-        adapter = self._slack_adapter(supports_inchannel=True)
+        adapter = self._telegram_adapter(supports_inchannel=True)
         origin_with_thread = {
-            "platform": "slack", "chat_id": "C123", "user_id": "U_HUMAN",
+            "platform": "telegram", "chat_id": "C123", "user_id": "U_HUMAN",
             # Genuine origin thread (job created from inside a thread).
             "thread_id": "1787188000.000100",
         }
         with patch("gateway.delivery.DeliveryRouter", _SpyRouter), \
              patch("cron.scheduler_delivery._seed_cron_channel_session", return_value=True) as seed_mock:
             self._run_inchannel_delivery(
-                {"slack": {"cron_continuable_surface": "in_channel"}}, adapter,
+                {"telegram": {"cron_continuable_surface": "in_channel"}}, adapter,
                 attach_to_session=False, origin=origin_with_thread,
             )
         seed_mock.assert_called_once()
@@ -2366,7 +2366,7 @@ class TestCronContinuableSurfaceInChannel:
         guard resolves the workspace from metadata.scope_id. After a gateway
         restart the RelayAdapter's per-chat scope cache is cold, and
         DeliveryRouter stamps scope only for the configured HOME channel —
-        so a scoped Slack origin that is NOT the home chat egressed with no
+        so a scoped Telegram origin that is NOT the home chat egressed with no
         scope_id and could be rejected before delivery. The scheduler must
         stamp the persisted origin scope onto origin-matching routing
         metadata (and never onto fan-out targets, which the origin-match
@@ -2381,9 +2381,9 @@ class TestCronContinuableSurfaceInChannel:
                 captured["metadata"] = metadata
                 return {"success": True, "message_id": "msg_1"}
 
-        adapter = self._slack_adapter(supports_inchannel=True)
+        adapter = self._telegram_adapter(supports_inchannel=True)
         scoped_origin = {
-            "platform": "slack", "chat_id": "C123", "user_id": "U_HUMAN",
+            "platform": "telegram", "chat_id": "C123", "user_id": "U_HUMAN",
             # Persisted workspace scope (captured at job creation). C123 is
             # not any configured home channel in this harness.
             "scope_id": "T0AAAA111",
@@ -2391,7 +2391,7 @@ class TestCronContinuableSurfaceInChannel:
         with patch("gateway.delivery.DeliveryRouter", _SpyRouter), \
              patch("cron.scheduler_delivery._seed_cron_channel_session", return_value=True):
             self._run_inchannel_delivery(
-                {"slack": {"cron_continuable_surface": "in_channel"}}, adapter,
+                {"telegram": {"cron_continuable_surface": "in_channel"}}, adapter,
                 attach_to_session=False, origin=scoped_origin,
             )
         assert captured["metadata"].get("scope_id") == "T0AAAA111", (
@@ -2413,11 +2413,11 @@ class TestCronContinuableSurfaceInChannel:
                 captured["metadata"] = metadata
                 return {"success": True, "message_id": "msg_1"}
 
-        adapter = self._slack_adapter(supports_inchannel=True)
+        adapter = self._telegram_adapter(supports_inchannel=True)
         with patch("gateway.delivery.DeliveryRouter", _SpyRouter), \
              patch("cron.scheduler_delivery._seed_cron_channel_session", return_value=True):
             self._run_inchannel_delivery(
-                {"slack": {"cron_continuable_surface": "in_channel"}}, adapter,
+                {"telegram": {"cron_continuable_surface": "in_channel"}}, adapter,
                 attach_to_session=False,
             )
         assert "scope_id" not in captured["metadata"]
@@ -2447,7 +2447,7 @@ class TestCronContinuableSurfaceInChannel:
         )
         with patch("cron.scheduler_delivery._seed_cron_channel_session") as seed_mock:
             self._run_inchannel_delivery(
-                {"slack": {"cron_continuable_surface": "in_channel"}}, adapter,
+                {"telegram": {"cron_continuable_surface": "in_channel"}}, adapter,
                 attach_to_session=False,
             )
         # Delivery must have gone through the LIVE adapter — otherwise a
@@ -2478,7 +2478,7 @@ class TestCronContinuableSurfaceInChannel:
 
         with patch("gateway.mirror.mirror_to_session", return_value=True) as mirror_mock:
             ok = _seed_cron_channel_session(
-                {"id": "j1", "name": "Brief"}, adapter, "slack", "D0BJTDCSR7C",
+                {"id": "j1", "name": "Brief"}, adapter, "telegram", "D0BJTDCSR7C",
                 "Daily brief", is_dm=True, user_id="U_HUMAN", chat_name=None,
             )
         assert ok is True
@@ -2488,15 +2488,15 @@ class TestCronContinuableSurfaceInChannel:
 
     def test_in_channel_also_seeds_thread_surface_of_delivered_brief(self):
         """REGRESSION (live, Alice 2026-08-19 19:19): the user replied IN THE
-        BRIEF'S THREAD (Slack's natural affordance on a flat message). That
+        BRIEF'S THREAD (Telegram's natural affordance on a flat message). That
         reply keys to (chat, thread=<brief ts>) — a session in_channel mode
         never seeded, so the agent had no idea about its own brief. The flat
         delivery's message_id must anchor a companion thread-surface seed."""
-        adapter = self._slack_adapter(supports_inchannel=True)
+        adapter = self._telegram_adapter(supports_inchannel=True)
         with patch("cron.scheduler_delivery._seed_cron_channel_session", return_value=True), \
              patch("cron.scheduler_delivery._seed_cron_thread_session") as thread_seed_mock:
             self._run_inchannel_delivery(
-                {"slack": {"cron_continuable_surface": "in_channel"}}, adapter,
+                {"telegram": {"cron_continuable_surface": "in_channel"}}, adapter,
                 attach_to_session=False,
             )
         thread_seed_mock.assert_called_once()
@@ -2514,23 +2514,23 @@ class TestMultiTargetDeliveryContinuesOnFailure:
     and silently dropping every subsequent target.
     """
 
-    def _email_cfg(self):
+    def _telegram_cfg(self):
         from gateway.config import Platform
 
         pconfig = MagicMock()
         pconfig.enabled = True
         mock_cfg = MagicMock()
-        mock_cfg.platforms = {Platform.EMAIL: pconfig}
+        mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
         return mock_cfg
 
     def test_first_target_failure_does_not_crash_loop(self):
-        """First email target fails in the fallback; the second is still attempted."""
+        """First telegram target fails in the fallback; the second is still attempted."""
         job = {
-            "id": "multi-email-job",
-            "deliver": "email:a@example.com,email:b@example.com",
+            "id": "multi-telegram-job",
+            "deliver": "telegram:a@example.com,telegram:b@example.com",
         }
 
-        with patch("gateway.config.load_gateway_config", return_value=self._email_cfg()), \
+        with patch("gateway.config.load_gateway_config", return_value=self._telegram_cfg()), \
              patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
              patch("asyncio.run", side_effect=RuntimeError("no running loop")), \
              patch("concurrent.futures.ThreadPoolExecutor") as mock_pool_cls:
@@ -2558,10 +2558,10 @@ class TestMultiTargetDeliveryContinuesOnFailure:
         """When every target fails, the result reports all of them."""
         job = {
             "id": "all-fail-job",
-            "deliver": "email:a@example.com,email:b@example.com",
+            "deliver": "telegram:a@example.com,telegram:b@example.com",
         }
 
-        with patch("gateway.config.load_gateway_config", return_value=self._email_cfg()), \
+        with patch("gateway.config.load_gateway_config", return_value=self._telegram_cfg()), \
              patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
              patch("asyncio.run", side_effect=RuntimeError("no running loop")), \
              patch("concurrent.futures.ThreadPoolExecutor") as mock_pool_cls:

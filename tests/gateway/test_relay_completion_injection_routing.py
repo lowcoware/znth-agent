@@ -26,7 +26,7 @@ from gateway.run import GatewayRunner
 
 
 class _RelayAdapter:
-    """Stub relay adapter fronting slack."""
+    """Stub relay adapter fronting matrix."""
 
     name = "relay"
 
@@ -39,7 +39,7 @@ class _RelayAdapter:
         event._gateway_accepted = True
 
     def fronts_platform(self, platform):
-        return platform == Platform.SLACK
+        return platform == Platform.MATRIX
 
 
 def _runner_with_relay(adapter):
@@ -50,12 +50,12 @@ def _runner_with_relay(adapter):
     return runner
 
 
-def _slack_async_event():
+def _matrix_async_event():
     return {
         "type": "async_delegation",
         "delegation_id": "deleg_relay_route",
-        "session_key": "agent:main:slack:dm:D0BJTDCSR7C:1786298425.877239",
-        "platform": "slack",
+        "session_key": "agent:main:matrix:dm:D0BJTDCSR7C:1786298425.877239",
+        "platform": "matrix",
         "chat_type": "dm",
         "chat_id": "D0BJTDCSR7C",
         "status": "completed",
@@ -66,14 +66,14 @@ def _slack_async_event():
 
 @pytest.mark.asyncio
 async def test_injection_resolves_relay_adapter_for_fronted_platform():
-    """A gateway whose only adapter is the relay (fronting slack) must
-    deliver a slack-routed completion through it — not drop it as
+    """A gateway whose only adapter is the relay (fronting matrix) must
+    deliver a matrix-routed completion through it — not drop it as
     'no gateway route'."""
     adapter = _RelayAdapter()
     runner = _runner_with_relay(adapter)
 
     result = await runner._inject_watch_notification(
-        "[delegation completed]", _slack_async_event()
+        "[delegation completed]", _matrix_async_event()
     )
 
     assert result is True, (
@@ -87,9 +87,9 @@ async def test_injection_resolves_relay_adapter_for_fronted_platform():
 @pytest.mark.asyncio
 async def test_injection_retries_when_platform_not_fronted():
     """Unavailable transport stays retryable without letting relay hijack unrelated targets."""
-    adapter = _RelayAdapter()  # fronts slack only
+    adapter = _RelayAdapter()  # fronts matrix only
     runner = _runner_with_relay(adapter)
-    evt = _slack_async_event()
+    evt = _matrix_async_event()
     evt["session_key"] = "agent:main:discord:dm:123:456"
     evt["platform"] = "discord"
 

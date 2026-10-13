@@ -2,7 +2,7 @@
 
 Staging incident 2026-08-09 (defect #4, post-restart replay): restored
 async-delegation completions injected fine after the routing fix, but their
-egress bounced at the connector — "slack egress declined: target not routed
+egress bounced at the connector — "egress declined: target not routed
 to an onboarded tenant". The relay adapter re-attaches the tenant
 discriminators (metadata.scope_id / metadata.user_id) from per-chat caches
 warmed ONLY by the inbound path (_on_inbound -> _capture_scope). Synthetic
@@ -42,7 +42,7 @@ def _bare_relay_adapter():
 
 def _synth_event_with_origin():
     source = SessionSource(
-        platform=Platform.SLACK,
+        platform=Platform.TELEGRAM,
         chat_id="D0BJTDCSR7C",
         chat_type="dm",
         user_id="U0B5F8EEYAD",
@@ -79,7 +79,7 @@ async def test_injection_path_primes_before_handle_message():
         name = "relay"
 
         def fronts_platform(self, platform):
-            return platform == Platform.SLACK
+            return platform == Platform.TELEGRAM
 
         def prime_routing_cache(self, event):
             calls.append(("prime", getattr(event.source, "chat_id", None)))
@@ -97,8 +97,8 @@ async def test_injection_path_primes_before_handle_message():
     evt = {
         "type": "async_delegation",
         "delegation_id": "deleg_prime_wiring",
-        "session_key": "agent:main:slack:dm:D0BJTDCSR7C:1786298425.877239",
-        "platform": "slack",
+        "session_key": "agent:main:telegram:dm:D0BJTDCSR7C:1786298425.877239",
+        "platform": "telegram",
         "chat_type": "dm",
         "chat_id": "D0BJTDCSR7C",
         "status": "completed",

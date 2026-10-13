@@ -466,9 +466,8 @@ def bridge_core_env_settings(yaml_cfg: dict, platforms_data: dict) -> None:
 
     # Telegram settings → env vars / extra: migrated to the telegram plugin's apply_yaml_config_fn hook
     # (plugins/platforms/telegram/adapter.py). #41112 / #3823.
-    # WhatsApp settings → env vars: migrated to the whatsapp plugin's apply_yaml_config_fn hook
-    # (plugins/platforms/whatsapp/adapter.py). #41112 / #3823.
-    signal_cfg = yaml_cfg.get("signal", {})
+    # WhatsApp and Signal settings lived here as env bridges; both channels were cut, so their rows
+    # went with them (docs/DECISIONS.md).
 
 
 def read_yaml_layers(home: Path) -> dict:

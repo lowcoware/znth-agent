@@ -145,11 +145,11 @@ def test_a_relay_delivered_turn_stops_the_clock_its_inbound_started(rows):
     consumer = GatewayStreamConsumer(relay, "c1", StreamConsumerConfig(cursor=""))
     assert asyncio.run(consumer._send_or_edit("first streamed chunk"))
     event = MessageEvent(text="hi", message_type=MessageType.TEXT, message_id="in-2",
-                         source=SimpleNamespace(platform=Platform.SLACK, chat_id="C2", thread_id=None))
+                         source=SimpleNamespace(platform=Platform.MATRIX, chat_id="C2", thread_id=None))
     smg.start_reply_clock(event.source)
     asyncio.run(relay.send_final_ledgered(event, "k", "final answer", {}, reply_to=None))
     assert rows("hermes.gateway.reply_latency") == [
-        {"first_response_bucket": "lt_2s", "platform": "discord"}, {"first_response_bucket": "lt_2s", "platform": "slack"}]
+        {"first_response_bucket": "lt_2s", "platform": "discord"}, {"first_response_bucket": "lt_2s", "platform": "matrix"}]
     assert not smg._reply_clocks
 
 
@@ -160,13 +160,13 @@ def test_a_delivery_sent_after_the_routed_scope_resets_lands_in_the_owning_profi
     home_b = tmp_path / "profiles" / "b"
     token = set_hermes_home_override(str(home_b))
     try:
-        smg.start_reply_clock(SimpleNamespace(platform=Platform.SLACK, chat_id="C9"))
+        smg.start_reply_clock(SimpleNamespace(platform=Platform.MATRIX, chat_id="C9"))
     finally:
         reset_hermes_home_override(token)
-    asyncio.run(_Adapter(platform=Platform.SLACK)._send_with_retry("C9", "final answer", base_delay=0))
+    asyncio.run(_Adapter(platform=Platform.MATRIX)._send_with_retry("C9", "final answer", base_delay=0))
     asyncio.run(_Adapter()._send_with_retry("unseen", "hi", base_delay=0))  # no turn: the caller's scope
     assert rows("hermes.platform.delivery", with_home=True) == [
-        (str(home_b), {"failure_class": "none", "outcome": "sent", "platform": "slack"}),
+        (str(home_b), {"failure_class": "none", "outcome": "sent", "platform": "matrix"}),
         (str(get_hermes_home()), {"failure_class": "none", "outcome": "sent", "platform": "telegram"}),
     ]
 

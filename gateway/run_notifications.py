@@ -183,7 +183,6 @@ class GatewayNotificationsMixin(GatewayNotificationOwnershipMixin):
         if not adapter:
             return
         config = getattr(self, "config", None)
-        chat_id = getattr(source, "chat_id", None)
         # The routed adapter carries ITS profile's ``platforms.<p>`` block; ``self.config`` is the
         # launch profile's, so a served secondary's ``notice_delivery: private`` would be ignored.
         adapter_config = getattr(adapter, "config", None)

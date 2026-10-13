@@ -39,7 +39,7 @@ def _webhook(runner) -> WebhookAdapter:
 
 @pytest.fixture
 def profile_homes(tmp_path, monkeypatch):
-    """Default home with a DEFAULT-HOME Slack home channel; ``profiles/sec`` with SEC-HOME + its own GH_TOKEN."""
+    """Default home with a DEFAULT-HOME Telegram home channel; ``profiles/sec`` with SEC-HOME + its own GH_TOKEN."""
     home = tmp_path / ".hermes"
     sec = home / "profiles" / "sec"
     sec.mkdir(parents=True)
@@ -47,23 +47,23 @@ def profile_homes(tmp_path, monkeypatch):
     monkeypatch.setattr("hermes_cli.profiles._get_default_hermes_home", lambda: home)
     monkeypatch.setattr("hermes_cli.profiles._get_profiles_root", lambda: home / "profiles")
     (sec / "config.yaml").write_text(
-        "gateway:\n  multiplex_profiles: true\nplatforms:\n  slack:\n    enabled: true\n"
-        "    home_channel:\n      platform: slack\n      chat_id: SEC-HOME\n")
+        "gateway:\n  multiplex_profiles: true\nplatforms:\n  telegram:\n    enabled: true\n"
+        "    home_channel:\n      platform: telegram\n      chat_id: SEC-HOME\n")
     (sec / ".env").write_text("GH_TOKEN=sec-token\n")
     monkeypatch.setenv("GH_TOKEN", "default-token")  # multiplex: os.environ == the default profile
     default_cfg = GatewayConfig()
-    default_cfg.platforms[Platform.SLACK] = PlatformConfig(
-        enabled=True, home_channel=HomeChannel(platform=Platform.SLACK, chat_id="DEFAULT-HOME", name="Home"))
+    default_cfg.platforms[Platform.TELEGRAM] = PlatformConfig(
+        enabled=True, home_channel=HomeChannel(platform=Platform.TELEGRAM, chat_id="DEFAULT-HOME", name="Home"))
     return default_cfg
 
 
 @pytest.mark.asyncio
 async def test_routed_profile_delivers_via_its_own_adapter_and_home_channel(profile_homes):
     default, secondary = _target(), _target()
-    adapter = _webhook(_Runner({Platform.SLACK: default}, {"sec": {Platform.SLACK: secondary}}, profile_homes))
+    adapter = _webhook(_Runner({Platform.TELEGRAM: default}, {"sec": {Platform.TELEGRAM: secondary}}, profile_homes))
 
     result = await adapter._deliver_cross_platform(
-        "slack", "hi", {"deliver": "slack", "deliver_extra": {}, "profile": "sec"})
+        "telegram", "hi", {"deliver": "telegram", "deliver_extra": {}, "profile": "sec"})
 
     assert result.success
     default.send.assert_not_awaited()
@@ -76,15 +76,15 @@ async def test_delivery_fails_closed_instead_of_crossing_profiles(profile_homes)
     bot, and a default-bound route must not use a platform parked only on a secondary."""
     default, secondary = _target(), _target()
 
-    sec_without_slack = _webhook(_Runner({Platform.SLACK: default}, {"sec": {}}, profile_homes))
-    res = await sec_without_slack._deliver_cross_platform(
-        "slack", "hi", {"deliver": "slack", "deliver_extra": {"chat_id": "C1"}, "profile": "sec"})
+    sec_without_telegram = _webhook(_Runner({Platform.TELEGRAM: default}, {"sec": {}}, profile_homes))
+    res = await sec_without_telegram._deliver_cross_platform(
+        "telegram", "hi", {"deliver": "telegram", "deliver_extra": {"chat_id": "C1"}, "profile": "sec"})
     assert not res.success and "not connected" in res.error
     default.send.assert_not_awaited()
 
-    default_without_slack = _webhook(_Runner({}, {"sec": {Platform.SLACK: secondary}}, profile_homes))
-    res = await default_without_slack._deliver_cross_platform(
-        "slack", "hi", {"deliver": "slack", "deliver_extra": {"chat_id": "C1"}, "profile": None})
+    default_without_telegram = _webhook(_Runner({}, {"sec": {Platform.TELEGRAM: secondary}}, profile_homes))
+    res = await default_without_telegram._deliver_cross_platform(
+        "telegram", "hi", {"deliver": "telegram", "deliver_extra": {"chat_id": "C1"}, "profile": None})
     assert not res.success and "not connected" in res.error
     secondary.send.assert_not_awaited()
 
@@ -113,13 +113,13 @@ def test_api_server_profile_callback_resolves_routed_profile_adapter_fail_closed
     request = MagicMock()
     request.app = {}
 
-    api.gateway_runner = _Runner({Platform("google_chat"): default}, {"sec": {Platform("google_chat"): secondary}})
+    api.gateway_runner = _Runner({Platform("telegram"): default}, {"sec": {Platform("telegram"): secondary}})
     token = _api_request_profile.set("sec")
     try:
-        assert api._get_platform_callback_adapter(request, "google_chat") is secondary
-        api.gateway_runner = _Runner({Platform("google_chat"): default}, {"sec": {}})
-        assert api._get_platform_callback_adapter(request, "google_chat") is None
+        assert api._get_platform_callback_adapter(request, "telegram") is secondary
+        api.gateway_runner = _Runner({Platform("telegram"): default}, {"sec": {}})
+        assert api._get_platform_callback_adapter(request, "telegram") is None
     finally:
         _api_request_profile.reset(token)
     # No prefix: the primary map, unchanged.
-    assert api._get_platform_callback_adapter(request, "google_chat") is default
+    assert api._get_platform_callback_adapter(request, "telegram") is default

@@ -50,13 +50,13 @@ from gateway.session import AsyncSessionStore, SessionEntry
 # 1. Classifier/resolver coherence (the falsely-acked-loss class)
 # ---------------------------------------------------------------------------
 
-def _entry(session_id, session_key="agent:main:slack:dm:U1"):
+def _entry(session_id, session_key="agent:main:discord:dm:U1"):
     return SessionEntry(
         session_key=session_key,
         session_id=session_id,
         created_at=datetime.now(),
         updated_at=datetime.now(),
-        platform=Platform.SLACK,
+        platform=Platform.DISCORD,
         chat_type="dm",
     )
 
@@ -298,8 +298,8 @@ def test_fallback_source_reconstruction_without_scope_still_routes():
     author-bound scoped chats still route via user_id)."""
     runner = _fallback_runner()
     evt = {
-        "session_key": "agent:main:slack:dm:D42",
-        "platform": "slack",
+        "session_key": "agent:main:discord:dm:D42",
+        "platform": "discord",
         "chat_type": "dm",
         "chat_id": "D42",
         "user_id": "U1",

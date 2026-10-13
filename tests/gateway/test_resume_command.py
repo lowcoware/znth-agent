@@ -728,7 +728,7 @@ class TestHandleSessionsCommand:
 
     @pytest.mark.asyncio
     async def test_resume_persisted_fallback_fails_closed_on_user_id_alt(self, tmp_path):
-        """egilewski/CodeRabbit probe: Signal/Feishu key the session participant
+        """egilewski/CodeRabbit probe: Matrix keys the session participant
         on ``user_id_alt or user_id`` (build_session_key), but the sessions table
         stores only user_id. So a persisted per-user row that a caller shares the
         user_id of — but NOT the user_id_alt — maps to a DIFFERENT live session
@@ -740,21 +740,21 @@ class TestHandleSessionsCommand:
         from hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
         # Persisted rows carry only user_id (no user_id_alt column).
-        db.create_session("victim_alt_group", "signal", user_id="+15550001111",
-                          chat_id="signal-group", chat_type="group")
-        db.create_session("victim_alt_dm", "signal", user_id="+15550001111")  # no chat_id
+        db.create_session("victim_alt_group", "matrix", user_id="+15550001111",
+                          chat_id="matrix-group", chat_type="group")
+        db.create_session("victim_alt_dm", "matrix", user_id="+15550001111")  # no chat_id
         runner = _make_runner(session_db=db)
         runner._gateway_session_origin_for_id = lambda sid: None  # persisted-only
 
         # Per-user group: attacker shares user_id but has a different user_id_alt
         # → different session key → must fail closed (was: allowed via user_id).
-        attacker = SessionSource(platform=Platform.SIGNAL, chat_id="signal-group",
+        attacker = SessionSource(platform=Platform.MATRIX, chat_id="matrix-group",
                                  chat_type="group", user_id="+15550001111",
                                  user_id_alt="attacker-uuid")
         assert await runner._resume_target_allowed(attacker, "victim_alt_group",
                                                    allow_override=False) is False
         # No-chat_id DM keyed purely on the participant: same block.
-        dm_attacker = SessionSource(platform=Platform.SIGNAL, chat_id=None,
+        dm_attacker = SessionSource(platform=Platform.MATRIX, chat_id=None,
                                     chat_type="dm", user_id="+15550001111",
                                     user_id_alt="attacker-uuid")
         assert await runner._resume_target_allowed(dm_attacker, "victim_alt_dm",

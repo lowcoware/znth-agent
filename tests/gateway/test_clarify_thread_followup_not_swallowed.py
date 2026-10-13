@@ -32,12 +32,12 @@ from gateway.platforms.event import MessageEvent, MessageType
 from gateway.session import SessionSource
 
 
-SESSION_KEY = "agent:main:slack:dm:D123:1111.2222"
+SESSION_KEY = "agent:main:telegram:dm:D123:1111.2222"
 
 
 class _StubAdapter(BasePlatformAdapter):
     def __init__(self):
-        super().__init__(PlatformConfig(enabled=True, token="test"), Platform.SLACK)
+        super().__init__(PlatformConfig(enabled=True, token="test"), Platform.TELEGRAM)
 
     async def connect(self, *, is_reconnect: bool = False):
         return True
@@ -72,7 +72,7 @@ def _event(text):
         text=text,
         message_type=MessageType.TEXT,
         source=SessionSource(
-            platform=Platform.SLACK,
+            platform=Platform.TELEGRAM,
             chat_id="D123",
             chat_type="dm",
             user_id="U1",

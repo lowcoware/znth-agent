@@ -564,7 +564,7 @@ async def _send_chunks(chunks, send_one):
 def _platform_max_length(platform):
     """Chunking limit from the registry (``max_message_length``) for plugin platforms, else None
     (no chunking). Telegram chunks internally."""
-    from gateway.config import Platform  # noqa: F401  (kept for callers that pass a Platform)
+    from gateway.config import Platform
     try:
         from gateway.platform_registry import platform_registry
         entry = platform_registry.get(platform.value)
@@ -632,7 +632,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     """Route to the platform sender, chunking long text with the adapters' splitter. Order matters:
     Telegram first (it chunks its own *formatted* text), then plugin standalone media, native
     chunked routes, generic text (registry handler or live adapter)."""
-    from gateway.config import Platform  # noqa: F401  (callers pass a Platform; kept for parity)
+    from gateway.config import Platform
     platform_name = platform.value if hasattr(platform, "value") else str(platform)
     media_files = media_files or []
     # Telegram chunks internally on the *formatted* text (escaping inflates length).
