@@ -269,8 +269,9 @@ TOOL_CATEGORIES = {
         "setup_note": "Self-hosted and keyless providers only: your own SearXNG, your own Firecrawl, or DuckDuckGo.",
         "icon": "🔍",
         # Every row comes from plugins.web.<vendor> via _plugin_web_search_providers() — ddgs (keyless),
-        # searxng (self-hosted), firecrawl (self-hosted). The managed "Nous Subscription" row and the
-        # BYOK cloud rows are gone with their vendors; see docs/DECISIONS.md.
+        # searxng (self-hosted), exa/parallel/keenable/tavily (keyless tiers), firecrawl (keyless cloud
+        # and self-hosted). No hand-written rows: the managed "Nous Subscription" row was cut with the
+        # vendor gateway — see docs/DECISIONS.md.
         "providers": [],
     },
     "image_gen": {

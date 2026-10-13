@@ -18,7 +18,7 @@ _firecrawl_client = _firecrawl_client_config = _parallel_client = _async_paralle
 
 from plugins.web.firecrawl.provider import _is_tool_gateway_ready, check_firecrawl_api_key
 from tools.debug_helpers import DebugSession
-from tools.tool_backend_helpers import NOUS_MANAGED_PROVIDER, read_selection, selection_exists
+from tools.tool_backend_helpers import selection_exists
 from tools.url_safety import async_is_safe_url
 from tools.web_tools_rescue import _managed_search_fallback, _rescue_eligible, _rescue_search
 from tools.web_tools_truncate import _effective_char_limit, _trim_results, _truncate_results, convert_base64_images_to_links
@@ -100,19 +100,16 @@ def _probe(provider, method: str, context: str = "") -> Optional[bool]:
 def _get_backend() -> str:
     """Shared web backend name. A stored ``web.backend`` is returned as-is — no availability probe, no
     fallback — so a broken selection surfaces the vendor's honest error rather than silently rerouting.
-    The managed ``use_gateway`` selection also resolves to firecrawl with no ladder. Autodetect runs
-    whenever no SHARED web selection was ever stored: per-capability keys (``web.search_backend``,
-    ``web.extract_backend``) name only their own capability and never reroute the other (#113017)."""
+    Autodetect runs whenever no SHARED web selection was ever stored: per-capability keys
+    (``web.search_backend``, ``web.extract_backend``) name only their own capability and never reroute
+    the other (#113017). An empty string means "nothing usable" — dispatch falls through to the keyless
+    walk or a clear "no provider configured" error instead of naming a backend nobody serves."""
     configured = _configured_backend()
     if configured:
-        # "nous" (managed subscription) is serviced by firecrawl, routed through the managed Tool Gateway.
-        return "firecrawl" if configured == NOUS_MANAGED_PROVIDER else configured
-    if read_selection("web") is not None:
-        # Shared selection exists (use_gateway) but no shared name: firecrawl, no ladder.
-        return "firecrawl"
+        return configured
 
-    # Never-configured install.
-    return _autodetect_backend() or _keyless_backend() or "firecrawl"  # default (backward compat)
+    # Never-configured install: autodetect, then the keyless free tier.
+    return _autodetect_backend() or _keyless_backend() or ""
 
 
 def _autodetect_backend() -> Optional[str]:
@@ -124,7 +121,7 @@ def _autodetect_backend() -> Optional[str]:
         ("exa", _has_env("EXA_API_KEY")),
         ("parallel", _has_env("PARALLEL_API_KEY")), ("keenable", _has_env("KEENABLE_API_KEY")),
         ("firecrawl", _has_env("FIRECRAWL_API_KEY") or _has_env("FIRECRAWL_API_URL")),
-        ("firecrawl", _is_tool_gateway_ready()), ("searxng", _has_env("SEARXNG_URL")),
+        ("searxng", _has_env("SEARXNG_URL")),
         ("ddgs", _ddgs_package_importable()),
     )
     for backend, available in backend_candidates:
@@ -156,39 +153,23 @@ def _keyless_backend() -> Optional[str]:
 
 
 def _managed_web_search() -> bool:
-    """True when web_search is on the managed Nous route: the stored ``nous`` selection (a
-    ``web.search_backend: nous`` pin, else the shared one), or a never-configured install whose
-    autodetect lands on the gateway — the entitled Firecrawl gateway, or free Perplexity fast search
-    for any Nous identity when nothing else is configured (search-only: the extract ladder is
-    untouched). A stored vendor selection never is."""
-    search_pin = _configured_backend("search_backend")
-    if search_pin:
-        return search_pin == NOUS_MANAGED_PROVIDER
-    selected = read_selection("web")
-    if selected is not None:
-        return selected == NOUS_MANAGED_PROVIDER
-    backend = _autodetect_backend()
-    if backend == "firecrawl":
-        return not (_has_env("FIRECRAWL_API_KEY") or _has_env("FIRECRAWL_API_URL")) and _is_tool_gateway_ready()
-    from tools.managed_tool_gateway import peek_nous_access_token, resolve_free_search_gateway
-    return backend is None and resolve_free_search_gateway(token_reader=peek_nous_access_token) is not None
+    """Always False: the vendor-managed (Nous subscription) web route was cut — see docs/DECISIONS.md.
+    impulse: managed route removed — restore the gateway probe if a hosted route ever comes back."""
+    return False
 
 
 def _get_search_backend() -> str:
-    """Backend for web_search: ``web.search_backend`` (strict, no probe) > ``web.backend`` > autodetect.
-    The managed Nous route (a ``nous`` pin or shared selection) serves search from Perplexity (extract
-    stays on Firecrawl); managed Firecrawl is the per-call fallback, see ``_memoized_search``."""
+    """Backend for web_search: ``web.search_backend`` (strict, no probe) > ``web.backend`` > autodetect."""
     pin = _configured_backend("search_backend")
-    if pin and pin != NOUS_MANAGED_PROVIDER:
+    if pin:
         return pin
-    return "perplexity" if _managed_web_search() else _get_backend()
+    return _get_backend()
 
 
 def _get_extract_backend() -> str:
-    """Backend for web_extract: ``web.extract_backend`` (strict, no probe) > ``web.backend`` > autodetect.
-    A ``nous`` pin is managed Firecrawl; the client picks the gateway route for that capability."""
+    """Backend for web_extract: ``web.extract_backend`` (strict, no probe) > ``web.backend`` > autodetect."""
     pin = _configured_backend("extract_backend")
-    return "firecrawl" if pin == NOUS_MANAGED_PROVIDER else pin or _get_backend()
+    return pin or _get_backend()
 
 
 def _ddgs_package_importable() -> bool:

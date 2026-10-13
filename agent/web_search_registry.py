@@ -50,13 +50,12 @@ def _read_config_key(*path: str) -> Optional[str]:
 
 
 def _configured_backend(capability: str) -> Optional[str]:
-    """``web.<capability>_backend`` (preferred) or ``web.backend`` (shared fallback). The managed ``nous``
-    selection names no provider: it is served by Firecrawl through the tool gateway."""
+    """``web.<capability>_backend`` (preferred) or ``web.backend`` (shared fallback)."""
     configured = _read_config_key("web", f"{capability}_backend") or _read_config_key("web", "backend")
     if configured and configured.lower() == "nous":
-        # Perplexity's managed free fast search was cut (third-party key on the direct path); the
-        # managed route now always means gateway Firecrawl.
-        return "firecrawl"
+        # impulse: the vendor-managed (Nous subscription) web route was cut — a stale ``nous`` selection
+        # now names nothing and the keyless / availability walk decides instead.
+        return None
     return configured
 
 
