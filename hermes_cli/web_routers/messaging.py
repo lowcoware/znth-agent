@@ -30,7 +30,7 @@ from hermes_constants import get_process_hermes_home
 from hermes_cli.web_deps import LateState, late
 from hermes_cli.web_server_gateway import _restart_gateway_after
 from hermes_cli.web_server_messaging import (
-    _TelegramOnboardingPairing, _WhatsAppOnboardingSession, _messaging_platform_catalog, _telegram_onboarding_error_message, _telegram_onboarding_lock, _telegram_onboarding_pairings, _whatsapp_onboarding_payload, _whatsapp_onboarding_sessions,
+    _TelegramOnboardingPairing, _messaging_platform_catalog, _telegram_onboarding_error_message, _telegram_onboarding_lock, _telegram_onboarding_pairings,
 )
 from hermes_cli.web_routers._common import (
     REDACTED_CREDENTIAL_WRITE_DETAIL, http_failure, is_redacted_credential_preview,
@@ -38,7 +38,6 @@ from hermes_cli.web_routers._common import (
 )
 from hermes_cli.web_models import (
     MessagingPlatformUpdate, TelegramOnboardingApply, TelegramOnboardingStart,
-    WhatsAppOnboardingApply, WhatsAppOnboardingStart,
 )
 
 _log = logging.getLogger("hermes_cli.web_server")
@@ -48,9 +47,7 @@ router = APIRouter()
 _config_profile_scope = late("_config_profile_scope", "hermes_cli.web_server_profiles")
 _profile_scope = late("_profile_scope", "hermes_cli.web_server_profiles")
 _resolve_profile_dir = late("_resolve_profile_dir", "hermes_cli.web_server_profiles")
-_restart_gateway_after_whatsapp_onboarding = late("_restart_gateway_after_whatsapp_onboarding", "hermes_cli.web_server_messaging")
 _telegram_onboarding_request_sync = late("_telegram_onboarding_request_sync", "hermes_cli.web_server_messaging")
-_whatsapp_session_path = late("_whatsapp_session_path", "hermes_cli.web_server_messaging")
 _write_platform_enabled = late("_write_platform_enabled", "hermes_cli.web_server_messaging")
 load_env = late("load_env", "hermes_cli.config")
 load_config = late("load_config", "hermes_cli.config")
@@ -62,42 +59,9 @@ _probe_gateway_health = late("_probe_gateway_health", "hermes_cli.web_server_gat
 get_running_pid_cached = late("get_running_pid_cached", "gateway.status")
 get_runtime_status_running_pid = late("get_runtime_status_running_pid", "gateway.status")
 _GATEWAY_HEALTH_URL = LateState("_GATEWAY_HEALTH_URL")
-# Display labels for env vars not in OPTIONAL_ENV_VARS (bridge toggles, Twilio, Email, ...)
-# so the UI can still render a friendly label. Rows: (key, description, prompt, extra flags).
-_MESSAGING_ENV_FALLBACKS: dict[str, dict[str, Any]] = {
-    key: {"description": description, "prompt": prompt, **extra}
-    for key, description, prompt, extra in (
-        ("SIGNAL_HTTP_URL", "signal-cli REST API base URL, e.g. http://127.0.0.1:8080", "Signal bridge URL", {"url": "https://github.com/bbernhard/signal-cli-rest-api"}),
-        ("SIGNAL_ACCOUNT", "Signal account phone number registered with the bridge", "Signal account", {}),
-        ("SIGNAL_ALLOWED_USERS", "Comma-separated Signal users allowed to use the bot", "Allowed Signal users", {}),
-        ("WHATSAPP_ENABLED", "Enable the WhatsApp gateway adapter", "Enable WhatsApp", {"advanced": True}),
-        ("WHATSAPP_MODE", "WhatsApp bridge mode", "WhatsApp mode", {"advanced": True}),
-        ("WHATSAPP_DM_POLICY", "How WhatsApp direct messages are authorized", "WhatsApp DM policy", {"advanced": True}),
-        ("WHATSAPP_ALLOWED_USERS", "Comma-separated WhatsApp users allowed to use the bot", "Allowed WhatsApp users", {}),
-        ("EMAIL_ADDRESS", "Email address to send and receive from", "Email address", {}),
-        ("EMAIL_PASSWORD", "Email account password or app password", "Email password", {"password": True}),
-        ("EMAIL_IMAP_HOST", "IMAP server host (e.g. imap.gmail.com)", "IMAP host", {}),
-        ("EMAIL_SMTP_HOST", "SMTP server host (e.g. smtp.gmail.com)", "SMTP host", {}),
-        ("TWILIO_ACCOUNT_SID", "Twilio Account SID", "Twilio Account SID", {"url": "https://www.twilio.com/console"}),
-        ("TWILIO_AUTH_TOKEN", "Twilio Auth Token", "Twilio Auth Token", {"password": True}),
-        ("WECOM_BOT_ID", "WeCom group bot ID", "WeCom Bot ID", {}),
-        ("WECOM_SECRET", "WeCom group bot secret", "WeCom Secret", {"password": True}),
-        ("WECOM_CALLBACK_CORP_ID", "WeCom corp ID", "WeCom Corp ID", {}),
-        ("WECOM_CALLBACK_CORP_SECRET", "WeCom app corp secret", "WeCom Corp Secret", {"password": True}),
-        ("WECOM_CALLBACK_AGENT_ID", "WeCom app agent ID", "WeCom Agent ID", {}),
-        ("WECOM_CALLBACK_TOKEN", "WeCom callback verification token", "WeCom Token", {}),
-        ("WECOM_CALLBACK_ENCODING_AES_KEY", "WeCom callback AES encoding key", "WeCom AES Key", {"password": True}),
-        ("WEIXIN_ACCOUNT_ID", "iLink Bot account ID obtained through QR login in hermes gateway setup", "iLink Bot account ID", {}),
-        ("WEIXIN_TOKEN", "iLink Bot token obtained through QR login in hermes gateway setup", "iLink Bot token", {"password": True}),
-        ("WEIXIN_BASE_URL", "iLink API base URL saved by QR login (default: https://ilinkai.weixin.qq.com)", "iLink API base URL", {}),
-        ("FEISHU_APP_ID", "Feishu / Lark app ID", "App ID", {}),
-        ("FEISHU_APP_SECRET", "Feishu / Lark app secret", "App secret", {"password": True}),
-        ("FEISHU_ENCRYPT_KEY", "Feishu / Lark encrypt key", "Encrypt key", {"password": True}),
-        ("FEISHU_VERIFICATION_TOKEN", "Feishu / Lark verification token", "Verification token", {"password": True}),
-        ("DINGTALK_CLIENT_ID", "DingTalk client ID (App key)", "Client ID", {}),
-        ("DINGTALK_CLIENT_SECRET", "DingTalk client secret (App secret)", "Client secret", {"password": True}),
-    )
-}
+# Display labels for env vars not in OPTIONAL_ENV_VARS (bridge toggles, Twilio, Email, …) lived here.
+# Every row belonged to a cut channel (Signal, WhatsApp, Email, SMS/Twilio, WeCom, Weixin, Feishu,
+# DingTalk) — Telegram's keys come from OPTIONAL_ENV_VARS. Re-add a row here when a channel returns.
 
 
 # Kept in sync with the corresponding frontend validation in ChannelsPage.tsx.
@@ -281,13 +245,6 @@ def _messaging_platform_payload(
         # Multiplex secondary served on the default's shared listener: the vendor callback URL.
         "ingress_url": runtime_platform.get("ingress_url") if gateway_running else None,
     }
-    if platform_id == "whatsapp":
-        whatsapp_mode = env_value("WHATSAPP_MODE").strip()
-        payload["whatsapp_setup"] = {
-            "mode": whatsapp_mode if whatsapp_mode in {"bot", "self-chat"} else "",
-            "allowed_users_set": bool(env_value("WHATSAPP_ALLOWED_USERS").strip()),
-            "home_channel_set": bool(home_channel),
-        }
     return payload
 
 
@@ -333,341 +290,6 @@ def _onboarding_save_errors(log_msg: str, detail: str):
 
 
 # ── WhatsApp QR onboarding ─────────────────────────────────────
-
-_WHATSAPP_ONBOARDING_TTL_SECONDS = 600
-_WHATSAPP_ONBOARDING_TERMINAL_STATUSES = {"connected", "error", "expired", "cancelled"}
-_WHATSAPP_SESSION_NOT_FOUND = "WhatsApp setup session was not found. Start a new setup."
-_whatsapp_onboarding_lock = threading.RLock()
-
-
-def _normalize_whatsapp_onboarding_mode(value: Any) -> str:
-    mode = str(value or "bot").strip().lower()
-    if mode not in {"bot", "self-chat"}:
-        raise HTTPException(status_code=400, detail="WhatsApp mode must be 'bot' or 'self-chat'.")
-    return mode
-
-
-def _normalize_whatsapp_allowed_users(value: Any) -> str:
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    return ",".join(part.replace(" ", "") for part in raw.split(",") if part.strip())
-
-
-def _whatsapp_phone_from_identifier(value: Any) -> str | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    digits = re.sub(r"\D+", "", raw.split("@", 1)[0].split(":", 1)[0])
-    return digits or None
-
-
-def _first_str(candidate: Any, keys: tuple[str, ...]) -> str | None:
-    if not isinstance(candidate, dict):
-        return None
-    return next((v for v in (str(candidate.get(k) or "").strip() for k in keys) if v), None)
-
-
-def _whatsapp_linked_account_from_session(session_path: Path) -> tuple[str | None, str | None, str | None]:
-    try:
-        payload = json.loads((session_path / "creds.json").read_text(encoding="utf-8-sig"))
-    except Exception:
-        return None, None, None
-    candidates = (payload.get("me"), payload.get("account"), payload)
-    account_id = next((v for v in (_first_str(c, ("id", "jid", "lid")) for c in candidates) if v), None)
-    account_name = next((v for v in (_first_str(c, ("name", "verifiedName", "notify", "pushName")) for c in candidates) if v), None)
-    return account_id, account_name, _whatsapp_phone_from_identifier(account_id)
-
-
-def _ensure_whatsapp_bridge_dependencies(bridge_dir: Path) -> None:
-    """Install bridge dependencies when the dashboard is the setup surface."""
-    if (bridge_dir / "node_modules").exists():
-        return
-
-    from hermes_constants import find_node_executable, with_hermes_node_path
-    from utils import env_int
-    import pm
-
-    npm = find_node_executable("npm")
-
-    try:
-        env = with_hermes_node_path()
-        if npm is None:
-            env = pm.ensure("npm", explicit=True).env
-            installed = pm.installed_package("npm")
-            if installed is None or installed.binary is None:
-                raise pm.InstallError("npm", "npm binary is missing after preparation")
-            npm = str(installed.binary)
-        # npm output is UTF-8; encoding= guards the Windows ANSI-code-page
-        # default against undefined bytes crashing the reader thread.
-        result = subprocess.run(
-            [npm, "install", "--silent"], cwd=str(bridge_dir), capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=env_int("WHATSAPP_NPM_INSTALL_TIMEOUT", 300),
-            env=env, creationflags=windows_hide_flags(),
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise HTTPException(status_code=500, detail="Installing WhatsApp bridge dependencies timed out.") from exc
-    except (pm.InstallError, OSError) as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to install WhatsApp bridge dependencies: {exc}") from exc
-
-    if result.returncode != 0:
-        detail = "\n".join((result.stderr or result.stdout or "").strip().splitlines()[-10:])
-        raise HTTPException(status_code=500, detail=f"npm install failed for WhatsApp bridge: {detail or 'no output'}")
-
-
-def _spawn_whatsapp_pairing_process(session_path: Path, mode: str) -> subprocess.Popen:
-    from gateway.platforms.whatsapp_common import resolve_whatsapp_bridge_dir
-    from hermes_constants import find_node_executable, with_hermes_node_path
-
-    bridge_dir = resolve_whatsapp_bridge_dir()
-    bridge_script = bridge_dir / "bridge.js"
-    if not bridge_script.exists():
-        raise HTTPException(status_code=500, detail=f"WhatsApp bridge script was not found at {bridge_script}.")
-    _ensure_whatsapp_bridge_dependencies(bridge_dir)
-    node = find_node_executable("node")
-    if not node:
-        import pm
-
-        try:
-            pm.ensure("node", explicit=True)
-            installed = pm.installed_package("node")
-            if installed is None or installed.binary is None:
-                raise pm.InstallError("node", "Node.js binary is missing after preparation")
-            node = str(installed.binary)
-        except pm.InstallError as exc:
-            raise HTTPException(status_code=500, detail=f"Node.js preparation failed: {exc}") from exc
-    session_path.mkdir(parents=True, exist_ok=True)
-
-    env = with_hermes_node_path()
-    env["WHATSAPP_MODE"] = mode
-    env["WHATSAPP_DM_POLICY"] = "pairing"
-    return subprocess.Popen(
-        [node, str(bridge_script), "--pair-only", "--pair-json", "--session", str(session_path)],
-        cwd=str(bridge_dir), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        encoding="utf-8", errors="replace", start_new_session=True, env=env,
-        creationflags=windows_hide_flags(),
-    )
-
-
-def _terminate_whatsapp_pairing(proc: subprocess.Popen | None) -> None:
-    if proc is None or proc.poll() is not None:
-        return
-    try:
-        proc.terminate()
-        proc.wait(timeout=3)
-    except Exception:
-        with contextlib.suppress(Exception):
-            proc.kill()
-
-
-def _fail_whatsapp_pairing(pairing_id: str, error: str, *, proc=None, unless=_WHATSAPP_ONBOARDING_TERMINAL_STATUSES) -> None:
-    """Mark the session errored unless its status is in ``unless`` (or, when
-    ``proc`` is given, it has since been superseded by another process)."""
-    with _whatsapp_onboarding_lock:
-        record = _whatsapp_onboarding_sessions.get(pairing_id)
-        if record and (proc is None or record.proc is proc) and record.status not in unless:
-            record.status = "error"
-            record.error = error
-
-
-def _apply_pairing_event(record, payload: dict) -> None:
-    event = str(payload.get("event") or "").strip()
-    if event == "qr":
-        qr = str(payload.get("qr") or "").strip()
-        if qr:
-            record.qr_payload = qr
-            record.status = "waiting"
-            record.error = None
-    elif event == "connected":
-        user = payload.get("user")
-        if isinstance(user, dict):
-            account_id = str(user.get("id") or "").strip()
-            record.account_id = account_id or None
-            record.account_name = str(user.get("name") or "").strip() or None
-            record.account_phone = _whatsapp_phone_from_identifier(account_id)
-        record.status = "connected"
-        record.error = None
-    elif event == "error":
-        record.status = "error"
-        record.error = str(payload.get("error") or "WhatsApp pairing failed.")
-    elif event == "disconnected" and record.status == "starting":
-        record.status = "waiting"
-
-
-def _watch_whatsapp_pairing(pairing_id: str, proc: subprocess.Popen) -> None:
-    try:
-        for line in proc.stdout or ():
-            raw = line.strip()
-            if not raw:
-                continue
-            try:
-                payload = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            with _whatsapp_onboarding_lock:
-                record = _whatsapp_onboarding_sessions.get(pairing_id)
-                if not record or record.proc is not proc:
-                    return
-                _apply_pairing_event(record, payload)
-        returncode = proc.wait()
-    except Exception as exc:
-        _fail_whatsapp_pairing(pairing_id, str(exc), proc=proc)
-        return
-    # An "error" status from the stream may be overwritten by the exit reason.
-    _fail_whatsapp_pairing(
-        pairing_id, "WhatsApp pairing process exited before pairing completed." if returncode == 0
-        else f"WhatsApp pairing process exited with code {returncode}.",
-        proc=proc, unless={"connected", "cancelled", "expired"})
-
-
-def _run_whatsapp_pairing(pairing_id: str, session_path: Path, mode: str) -> None:
-    with _whatsapp_onboarding_lock:
-        record = _whatsapp_onboarding_sessions.get(pairing_id)
-        if not record or record.status in _WHATSAPP_ONBOARDING_TERMINAL_STATUSES:
-            return
-        record.status = "installing"
-
-    try:
-        proc = _spawn_whatsapp_pairing_process(session_path, mode)
-    except Exception as exc:
-        _fail_whatsapp_pairing(pairing_id, str(exc))
-        return
-
-    with _whatsapp_onboarding_lock:
-        record = _whatsapp_onboarding_sessions.get(pairing_id)
-        if not record or record.status in _WHATSAPP_ONBOARDING_TERMINAL_STATUSES:
-            _terminate_whatsapp_pairing(proc)
-            return
-        record.proc = proc
-        record.status = "starting"
-
-    _watch_whatsapp_pairing(pairing_id, proc)
-
-
-def _prune_whatsapp_onboarding_sessions() -> None:
-    now = time.time()
-    remove_ids: list[str] = []
-    for pairing_id, record in _whatsapp_onboarding_sessions.items():
-        live = record.status not in _WHATSAPP_ONBOARDING_TERMINAL_STATUSES
-        if live and record.proc is not None and record.proc.poll() is not None:
-            record.status = "error"
-            record.error = "WhatsApp pairing process exited before pairing completed."
-            live = False
-        if live and record.expires_at_ts <= now:
-            _terminate_whatsapp_pairing(record.proc)
-            record.status = "expired"
-            record.error = "WhatsApp QR setup expired. Start a new setup."
-        if record.status in _WHATSAPP_ONBOARDING_TERMINAL_STATUSES and record.expires_at_ts + 300 <= now:
-            remove_ids.append(pairing_id)
-    for pairing_id in remove_ids:
-        _whatsapp_onboarding_sessions.pop(pairing_id, None)
-
-
-def _register_whatsapp_session(session_path: Path, record) -> str:
-    """Store ``record`` under a fresh pairing id, cancelling any live session on
-    the same session dir (superseded by the newer setup)."""
-    pairing_id = secrets.token_urlsafe(16)
-    with _whatsapp_onboarding_lock:
-        _prune_whatsapp_onboarding_sessions()
-        for existing in _whatsapp_onboarding_sessions.values():
-            if existing.session_path == str(session_path) and existing.status not in _WHATSAPP_ONBOARDING_TERMINAL_STATUSES:
-                existing.status = "cancelled"
-                existing.error = "Superseded by a newer WhatsApp setup session."
-                _terminate_whatsapp_pairing(existing.proc)
-        _whatsapp_onboarding_sessions[pairing_id] = record
-    return pairing_id
-
-
-@router.post("/api/messaging/whatsapp/onboarding/start")
-async def start_whatsapp_onboarding(body: WhatsAppOnboardingStart):
-    mode = _normalize_whatsapp_onboarding_mode(body.mode)
-    allowed_users = _normalize_whatsapp_allowed_users(body.allowed_users)
-
-    with _config_profile_scope(body.profile):
-        session_path = _whatsapp_session_path()
-        expires_at_ts = time.time() + _WHATSAPP_ONBOARDING_TTL_SECONDS
-        fields = dict(
-            proc=None, mode=mode, allowed_users=allowed_users, session_path=str(session_path),
-            expires_at=datetime.fromtimestamp(expires_at_ts, UTC).isoformat().replace("+00:00", "Z"),
-            expires_at_ts=expires_at_ts, profile=body.profile,
-        )
-        already_linked = (session_path / "creds.json").exists()
-        if already_linked:  # creds on disk: report connected without pairing
-            account_id, account_name, account_phone = _whatsapp_linked_account_from_session(session_path)
-            fields.update(status="connected", account_id=account_id, account_name=account_name, account_phone=account_phone)
-
-    record = _WhatsAppOnboardingSession(**fields)
-    pairing_id = _register_whatsapp_session(session_path, record)
-    if not already_linked:
-        threading.Thread(target=_run_whatsapp_pairing, args=(pairing_id, session_path, mode), daemon=True).start()
-    return _whatsapp_onboarding_payload(pairing_id, record)
-
-
-def _whatsapp_record_or_404(pairing_id: str):
-    """Call with ``_whatsapp_onboarding_lock`` held."""
-    _prune_whatsapp_onboarding_sessions()
-    record = _whatsapp_onboarding_sessions.get(pairing_id)
-    if not record:
-        raise HTTPException(status_code=404, detail=_WHATSAPP_SESSION_NOT_FOUND)
-    return record
-
-
-@router.get("/api/messaging/whatsapp/onboarding/{pairing_id}")
-async def get_whatsapp_onboarding_status(pairing_id: str):
-    with _whatsapp_onboarding_lock:
-        record = _whatsapp_record_or_404(pairing_id)
-        if record.status == "expired":
-            raise HTTPException(status_code=410, detail=record.error or "WhatsApp setup expired.")
-        return _whatsapp_onboarding_payload(pairing_id, record)
-
-
-@router.post("/api/messaging/whatsapp/onboarding/{pairing_id}/apply")
-async def apply_whatsapp_onboarding(pairing_id: str, body: WhatsAppOnboardingApply, profile: Optional[str] = None):
-    with _whatsapp_onboarding_lock:
-        record = _whatsapp_record_or_404(pairing_id)
-        if record.status != "connected":
-            raise HTTPException(status_code=409, detail="WhatsApp setup is not connected yet.")
-        mode = _normalize_whatsapp_onboarding_mode(body.mode or record.mode)
-        allowed_users = _normalize_whatsapp_allowed_users(record.allowed_users if body.allowed_users is None else body.allowed_users)
-        if mode == "self-chat" and not allowed_users:
-            allowed_users = record.account_phone or record.account_id or ""
-        record_profile = record.profile
-
-    effective_profile = body.profile or profile or record_profile
-    with _onboarding_save_errors("WhatsApp onboarding apply failed", "Failed to save WhatsApp setup."):
-        with _config_profile_scope(effective_profile):
-            save_env_value("WHATSAPP_MODE", mode)
-            save_env_value("WHATSAPP_DM_POLICY", "pairing")
-            # Blank means "keep the existing allowlist"; explicit clearing
-            # still lives in the normal config editor where the field is visible.
-            if allowed_users:
-                save_env_value("WHATSAPP_ALLOWED_USERS", allowed_users)
-            save_env_value("WHATSAPP_ENABLED", "true")
-            _write_platform_enabled("whatsapp", True)
-
-    with _whatsapp_onboarding_lock:
-        _whatsapp_onboarding_sessions.pop(pairing_id, None)
-
-    restart_result = _restart_gateway_after_whatsapp_onboarding(effective_profile)
-    return {"ok": True, "platform": "whatsapp", "needs_restart": not restart_result["restart_started"], **restart_result}
-
-
-@router.delete("/api/messaging/whatsapp/onboarding/{pairing_id}")
-async def cancel_whatsapp_onboarding(pairing_id: str):
-    with _whatsapp_onboarding_lock:
-        record = _whatsapp_onboarding_sessions.pop(pairing_id, None)
-    if record:
-        record.status = "cancelled"
-        _terminate_whatsapp_pairing(record.proc)
-    return {"ok": True}
-
-
-# ── Telegram QR onboarding ─────────────────────────────────────
-
-_TELEGRAM_SESSION_NOT_FOUND = "Telegram setup session was not found. Start a new setup."
-_TELEGRAM_INCOMPLETE_RESPONSE = "Telegram setup service returned an incomplete response."
-
 
 def _parse_expiry_ts(value: str) -> float:
     try:

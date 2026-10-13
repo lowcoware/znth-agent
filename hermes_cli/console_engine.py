@@ -350,7 +350,7 @@ def _register_command_family(
 
 _BLOCKED_TOP = frozenset(
     "acp chat claw completion dashboard desktop fallback gateway gui login logout model moa "
-    "oneshot proxy serve setup uninstall update whatsapp whatsapp-cloud".split())
+    "oneshot proxy serve setup uninstall update".split())
 
 _BLOCKED_PAIRS = {
     ("config", "edit"): "`config edit` opens an editor and is not available in Hermes Console.",

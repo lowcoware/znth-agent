@@ -303,8 +303,40 @@ CLI** из форка — exit 0, 230 строк справки, ноль упо
 **Проверено:** строгий импорт 7 модулей (все внутри форка); живой старт CLI — exit 0, ноль
 упоминаний снятых каналов в справке; `py_compile` обоих затронутых файлов веб-слоя.
 
-**Остаётся в 3b:** поток WhatsApp-онбординга (QR и мост) в `hermes_cli/web_routers/messaging.py` +
-панель в дашборде — связан с UI, отдельная задача; таблицы креденшелов и домашних каналов в
-`gateway/config_env.py`; члены перечисления `Platform`; карта allow-bots в `authz_mixin.py`; заметки
-платформ в `session.py`; списки в `gateway/run.py`; доки `website/` и тесты.
+**Остаётся в 3b:** таблицы креденшелов и домашних каналов в `gateway/config_env.py`; члены
+перечисления `Platform`; карта allow-bots в `authz_mixin.py`; заметки платформ в `session.py`;
+списки в `gateway/run.py`; прочие статические перечни каналов в `hermes_cli/config.py`,
+`config_defaults.py`, `dump.py`; доки `website/` и тесты.
+
+### Проход 3b-UI — WhatsApp-онбординг в дашборде. СДЕЛАНО (2026-10-13)
+
+Решение владельца: добить поток онбординга WhatsApp в дашборде.
+
+**Что снято:**
+- `hermes_cli/web_routers/messaging.py` — поток WhatsApp-онбординга целиком (−386 строк):
+  хелперы моста и запуск процесса сопряжения, наблюдатели, четыре эндпоинта
+  (`/api/messaging/whatsapp/onboarding/{start,{id},{id}/apply}` + DELETE), шимы `late()`,
+  импорты моделей и сессий; таблица `_MESSAGING_ENV_FALLBACKS` (все её строки принадлежали снятым
+  каналам — Signal, WhatsApp, Email, Twilio, WeCom, Weixin, Feishu, DingTalk) убрана вместе с
+  пустой заготовкой, ветка `whatsapp_setup` в payload платформы удалена;
+- `hermes_cli/web_models.py` — осиротевшие модели `WhatsAppOnboardingStart/Apply`;
+- `hermes_cli/web_server_messaging.py` — осиротевшие хелперы (`_WhatsAppOnboardingSession`,
+  `_whatsapp_onboarding_sessions`, `_whatsapp_session_path`, `_WHATSAPP_PAYLOAD_FIELDS`,
+  `_whatsapp_onboarding_payload`, `_restart_gateway_after_whatsapp_onboarding`) и импорты
+  `subprocess`/`Path`/`Optional`, которые держались только на них;
+- `web/src/pages/ChannelsPage.tsx` — компонент `WhatsAppOnboardingPanel` (−426 строк), два хелпера,
+  ветка рендера, тип из импорта;
+- `web/src/lib/api.ts` — четыре клиентские функции онбординга, три типа ответов, поле
+  `whatsapp_setup`, путь в списке профильных эндпоинтов (−72 строки);
+- `web/src/pages/SessionsPage_sources.tsx` — строки иконок и подписи `whatsapp`/`whatsapp_cloud`;
+- `hermes_cli/console_engine.py` — из `_BLOCKED_TOP` убраны `whatsapp` и `whatsapp-cloud`
+  (подкоманд больше нет — хвост моего же среза подкоманд).
+
+**Проверено:** строгий импорт 5 модулей бэкенда (все внутри форка); живой старт CLI — exit 0;
+сплошной поиск по репозиторию не находит ссылок на снятые символы UI (`WhatsAppOnboardingPanel`,
+`WhatsAppOnboarding*Response`, `startWhatsAppOnboarding` и т.д.); `py_compile` затронутых
+python-файлов.
+**Не проверено:** сборка и проверка типов фронтенда — в `web/` нет `node_modules`, а тянуть их
+ради этого прохода не стала. Проверка фронта здесь — структурная (границы блоков чистые, ссылок не
+осталось), не компиляторная.
 

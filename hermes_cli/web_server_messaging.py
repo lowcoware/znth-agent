@@ -4,12 +4,10 @@ and Telegram onboarding state.
 
 import logging
 import os
-import subprocess
 import threading
 from dataclasses import dataclass
 from fastapi import HTTPException
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from hermes_cli.config import OPTIONAL_ENV_VARS, write_platform_config_field
 from hermes_cli.setup_hidden_env import is_setup_hidden_env as _is_setup_hidden_env
 from hermes_cli.version_info import get_version_info
@@ -163,46 +161,6 @@ def _build_catalog_entry(platform_id: str, plugin_entry: Any | None = None) -> d
 
 def _write_platform_enabled(platform_id: str, enabled: bool) -> None:
     write_platform_config_field(platform_id, "enabled", enabled)
-
-
-@dataclass
-class _WhatsAppOnboardingSession:
-    proc: subprocess.Popen | None
-    mode: str
-    allowed_users: str
-    session_path: str
-    expires_at: str
-    expires_at_ts: float
-    profile: str | None = None
-    status: str = "starting"
-    qr_payload: str | None = None
-    account_id: str | None = None
-    account_name: str | None = None
-    account_phone: str | None = None
-    error: str | None = None
-
-
-_whatsapp_onboarding_sessions: dict[str, _WhatsAppOnboardingSession] = {}
-
-
-def _whatsapp_session_path() -> Path:
-    from hermes_constants import get_hermes_dir
-    return get_hermes_dir("platforms/whatsapp/session", "whatsapp/session")
-
-
-_WHATSAPP_PAYLOAD_FIELDS = (
-    "status", "qr_payload", "expires_at", "mode", "allowed_users", "account_id", "account_name",
-    "account_phone", "error",
-)
-
-
-def _whatsapp_onboarding_payload(pairing_id: str, record: _WhatsAppOnboardingSession) -> dict[str, Any]:
-    return {"pairing_id": pairing_id, **{f: getattr(record, f) for f in _WHATSAPP_PAYLOAD_FIELDS}}
-
-
-def _restart_gateway_after_whatsapp_onboarding(profile: Optional[str] = None) -> dict[str, Any]:
-    from hermes_cli.web_server_gateway import _restart_gateway_after
-    return _restart_gateway_after(profile, what="WhatsApp onboarding", label="WhatsApp onboarding")
 
 
 _TELEGRAM_ONBOARDING_DEFAULT_URL = "https://setup.hermes-agent.nousresearch.com"
