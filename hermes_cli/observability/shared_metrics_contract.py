@@ -275,7 +275,8 @@ DELEGATION_DEPTHS = frozenset({"1", "2", "3", "gte_4"})
 DELEGATION_MODES = frozenset({"background", "foreground"})
 EXECUTION_KINDS = frozenset({"browser", "code", "terminal"})
 # Shipped browser backends: tools/browser_{camofox,lightpanda,tool_cdp,tool_cloud,extension_router}.py
-# plus the bundled cloud providers in plugins/browser/.
+# plus the bundled cloud providers that used to live in plugins/browser/ (browser-use, browserbase,
+# firecrawl) — cut in the znth scope, kept as enum values because dashboards may still report them.
 BROWSER_BACKENDS = frozenset({
     "browser-use", "browserbase", "camofox", "cdp", "extension", "firecrawl", "lightpanda", "local", "other",
 })

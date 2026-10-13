@@ -313,9 +313,9 @@ TOOL_CATEGORIES = {
     },
     "browser": {
         "name": "Browser Automation", "icon": "🌐",
-        # Cloud provider rows (Browserbase, Browser Use, Firecrawl) come from plugins.browser.<vendor> via
-        # _plugin_browser_providers(); only non-provider setup-flow rows live here. "Local Browser" MUST stay
-        # first so a fresh install's Enter lands on the free local backend (index 0), never on the paid Nous row.
+        # Local engines only: the bundled cloud providers (Browserbase, Browser Use managed, Firecrawl)
+        # were cut with their vendors — see docs/DECISIONS.md. "Local Browser" MUST stay first so a fresh
+        # install's Enter lands on the free local backend (index 0).
         # Lightpanda is local too (cloud_provider: local, browser.engine: lightpanda — Browser Use mode spawns
         # ``lightpanda serve``, built-in tools use ``agent-browser --engine lightpanda``; no Chromium).
         # Camofox short-circuits the cloud dispatch via _is_camofox_mode().
@@ -324,12 +324,6 @@ TOOL_CATEGORIES = {
                  browser_engine="auto", post_setup="agent_browser"),
             _row("Lightpanda", "free · local · no Chromium", "Zig headless browser spawned by Hermes, text-only (no screenshots)",
                  browser_provider="local", browser_engine="lightpanda", post_setup="lightpanda"),
-            # Cloud hook installs only the agent-browser CLI: Browser Use hosts its own Chromium, so the
-            # local-Chromium install and readiness gate must not apply (with "agent_browser" this row read
-            # "needs setup" forever on machines without a local Chromium build).
-            _row("Nous Subscription (Browser Use cloud)", "subscription", "Managed Browser Use billed to your subscription",
-                 browser_provider="browser-use", **_NOUS, managed_nous_feature="browser",
-                 override_env_vars=["BROWSER_USE_API_KEY"], post_setup="browserbase"),
             _row("Camofox", "free · local", "Anti-detection browser (Firefox/Camoufox)",
                  [_key("CAMOFOX_URL", "Camofox server URL", "https://github.com/jo-inc/camofox-browser", default="http://localhost:9377")],
                  browser_provider="camofox", post_setup="camofox"),

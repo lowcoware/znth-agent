@@ -25,10 +25,12 @@ _registry: ProviderRegistry[BrowserProvider] = ProviderRegistry(
 _registry.export(globals())
 
 
-# Auto-detect order when ``browser.cloud_provider`` is unset (historic order: Browser Use first because
-# it covers both the managed Nous gateway and the direct API key path; Browserbase as the older
-# direct-credentials fallback). Firecrawl is deliberately absent — see :func:`_resolve`.
-_LEGACY_PREFERENCE = ("browser-use", "browserbase")
+# Auto-detect order when ``browser.cloud_provider`` is unset. Empty: the bundled cloud providers
+# (Browser Use managed, Browserbase, Firecrawl) were cut — see docs/DECISIONS.md — so a
+# never-configured install lands on the local browser. A provider registered by a user plugin is
+# still reachable by naming it explicitly in ``browser.cloud_provider``.
+# impulse: bundled cloud providers removed — list them here again if one comes back.
+_LEGACY_PREFERENCE = ()
 
 
 def _resolve(configured: Optional[str]) -> Optional[BrowserProvider]:

@@ -2901,18 +2901,6 @@ OPTIONAL_ENV_VARS = {
     "SEARXNG_URL": _tool("URL of your SearXNG instance for free self-hosted web search",
         "SearXNG URL (e.g. http://localhost:8080)", "https://searxng.github.io/searxng/",
         tools=["web_search"], password=False),
-    "BROWSERBASE_API_KEY": _tool(
-        "Browserbase API key for cloud browser (optional — local browser works without this)",
-        "Browserbase API key", "https://browserbase.com/",
-        tools=["browser_navigate", "browser_click"]),
-    "BROWSERBASE_PROJECT_ID": _tool(
-        "Browserbase project ID (optional — only needed for cloud browser)",
-        "Browserbase project ID", "https://browserbase.com/",
-        tools=["browser_navigate", "browser_click"], password=False),
-    "BROWSER_USE_API_KEY": _tool(
-        "Browser Use API key for cloud browser (optional — local browser works without this)",
-        "Browser Use API key", "https://browser-use.com/",
-        tools=["browser_navigate", "browser_click"]),
     "FIRECRAWL_BROWSER_TTL": _tool(
         "Firecrawl browser session TTL in seconds (optional, default 300)",
         "Browser session TTL (seconds)", tools=["browser_navigate", "browser_click"],
