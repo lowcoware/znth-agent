@@ -55,7 +55,7 @@ concurrency:
   # — the run is created with ZERO jobs, stays pending, then gets cancelled. A single simple
   # expression is accepted. PRs key on refs/pull/N/merge, so each PR still owns one group and a
   # newer push to the same PR cancels the older run; main pushes key on refs/heads/main.
-  group: ci-${{ github.ref }}
+  group: ci-znth-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
