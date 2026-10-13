@@ -216,3 +216,19 @@ python3 scripts/znth/strict_import_check.py --root /root/znth-agent \
 
 **Не проверено:** живой `web_extract` (страницу не тянула) — но extract-бэкендом выбран `exa`, у которого `supports_extract()` истинно, так что маршрут тот же.
 
+### Проход 1c — vendor-managed маршрут подписки Nous. СДЕЛАНО (2026-10-13)
+
+Решение владельца: «Резать — подписка Nous не нужна».
+
+**Что срезано (поиск):**
+
+- `agent/web_search_registry.py`: выбор `nous` больше ни на что не отображается (заглушка с маркером) — устаревшая настройка честно уходит в keyless/availability walk вместо тихой подмены;
+- `tools/web_tools.py`: `_managed_web_search()` → `False`; managed-ветки убраны из `_get_backend`, `_get_search_backend`, `_get_extract_backend`; из автоподбора убран шаг по шлюзу; импорт `NOUS_MANAGED_PROVIDER`/`read_selection` снят;
+- `plugins/web/firecrawl/provider.py`: `_is_tool_gateway_ready()` и `is_managed_route()` → `False` (заглушки с маркерами), `_get_firecrawl_gateway_url()` удалён, `_firecrawl_backend_help_suffix()` → пусто, из `_get_firecrawl_client()` убран `_managed()`-маршрут, пробы шлюза в `_use_keyless_ring()` убраны, неиспользуемые импорты `managed_tool_gateway`/`tool_backend_helpers` сняты.
+
+**Не тронуто:** keyless-облако Firecrawl и свой инстанс; keyless-кольцо; сам модуль `tools/managed_tool_gateway.py` — им пользуются другие подсистемы (image_gen, tts, transcription, modal), их судьба решается в своих проходах.
+
+**Проверено:** строгий импорт 11 модулей (все внутри форка); набор провайдеров прежний — 7 живых; `_managed_web_search()` → `False`; `check_web_api_key()` → `True`; **живой поиск снова прошёл** (`success: true` через keyless-тир Exa).
+
+**Хвост:** страница подписки (`hermes_cli/nous_subscription.py`) всё ещё перечисляет покрытие по web и браузеру, хотя маршрута за ними больше нет, а в мастере соответствующие строки уже убраны. Снять эти строки вместе с остальной механизмом подписки — когда очередь дойдёт до image_gen/video_gen/tts, там же лежат их строки.
+
