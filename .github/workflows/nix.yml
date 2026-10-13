@@ -36,9 +36,7 @@ permissions:
 # cancel-in-progress is false there — each run saves the store cache that
 # later PRs restore from.
 concurrency:
-  # Same reason as ci.yaml: ``inputs`` is not a valid context for a push event, so referencing it
-  # here left the run with zero jobs (pending, then cancelled). Semantics kept without it.
-  group: nix-${{ (github.event_name == 'workflow_call' && github.run_id) || github.event.pull_request.number || github.ref }}
+  group: nix-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
