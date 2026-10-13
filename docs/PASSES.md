@@ -122,3 +122,36 @@ python3 scripts/znth/strict_import_check.py --root /root/znth-agent \
 | 8 | Встроенные скиллы → минимум + impulse | 58 пакетов | средний (правило слияния) |
 
 Порядок от низкого риска к высокому: сначала то, что не имеет швов с ядром. Проход 5 (инструменты) идёт последним среди крупных — он затрагивает и наборы, и мастер, и записи каталога.
+
+---
+
+## Журнал проходов
+
+### Проход 1 — поиск: облачные провайдеры. СДЕЛАНО (2026-10-13)
+
+**Что срезано:** 9 каталогов и файлов — `plugins/web/{brave_free, exa, firecrawl, keenable, parallel, perplexity, tavily, xai}` (24 файла, 1468 строк) и `plugins/web/keyless_mcp.py` (427 строк, анонимное keyless-кольцо из тех же вендоров). Тесты, покрывавшие только снятое: 6 файлов, 2275 строк.
+
+**Что было швом и почему простое удаление каталогов не годилось:**
+
+- `tools/web_tools.py` импортировал функции firecrawl-плагина **на верхнем уровне** — удаление каталога уронило бы весь поиск. Импорт снят, использования вычищены.
+- Дефолтом бэкенда при пустой конфигурации стоял `firecrawl` (чужой провайдер). Теперь пустая строка: диспетчер выдаёт чистое «no web search provider configured» вместо имени, которого никто не обслуживает.
+- `hermes_cli/web_routers/tools.py` (дашборд) тянул из того же плагина `is_managed_route`.
+- Managed-маршрут Nous (`nous` → perplexity/firecrawl) и one-shot keyless-rescue заглушены, а не вырваны: `_managed_web_search()` → `False`, `tools/web_tools_rescue.py` сведён к швам, которые зовёт диспетчер.
+
+**Проверено (вывод команд):**
+
+- Строгий импорт: 10 модулей (`hermes_cli.main`, `model_tools`, `tools.web_tools`, `tools.web_tools_rescue`, `tools.web_tools_extract`, `agent.web_search_registry`, `plugins.web._common`, `plugins.web.ddgs.provider`, `plugins.web.searxng.provider`, `hermes_cli.web_routers.tools`) — все разрешились внутри `/root/znth-agent`.
+- Действующий набор провайдеров (разрешение, не чтение списка): `['ddgs', 'openai-native', 'searxng']`. Снятых имён нет.
+- Порядок автоподбора: `('searxng', 'ddgs')`; keyless-тир `()` и `False`.
+- Выбор снятого провайдера даёт честную ошибку, а не тихую подмену: «web is configured to use 'exa' … no registered web search provider has that name. Run 'hermes tools' to change it.»
+- Сборка тестов: `pytest --collect-only` по 8 файлам, связанным с поиском — 106 тестов собираются, мёртвых по импорту нет.
+
+**Не проверено (говорить честно):** живой поиск не гонялся — на этой машине не установлен `ddgs` и не задан `SEARXNG_URL`, поэтому `check_web_api_key()` возвращает `False` и инструменты поиска скрыты от модели. Первый же живой прогон — на машине с селфхостедным SearXNG или с установленным `ddgs`.
+
+**Хвосты, которые нужно решить (не резка, а решение):**
+
+1. **Firecrawl двусоставен.** В списке `hermes tools` есть строка «Firecrawl Self-Hosted» (свой Docker-инстанс) — это селфхостед, а правило владельца говорит «селфхостед оставляем». Каталог `plugins/web/firecrawl` обслуживал и облако, и свой инстанс, поэтому снят целиком, и строка мастера сейчас не работает. Варианты: вернуть каталог и вырезать внутри только облачную ветку (импорт кольца, managed-резолвер, keyless-клиент — четыре правки), либо убрать строку из мастера.
+2. **`openai-native`** остался в дереве (требует OAuth `openai-codex`, то есть чужой аккаунт). В согласованную восьмёрку не входил — ждёт вердикта.
+3. **`web_extract` остался без extract-провайдера:** уметь извлекать контент умели только снятые вендоры (perplexity и кольцевые). Сейчас вернётся чистая ошибка «no web extract provider configured». Решение: локальный конвертер страниц, self-hosted Firecrawl (см. пункт 1) или принять потерю.
+4. **8 тестовых файлов** (`test_web_managed_routing`, `test_web_tools_perplexity`, `test_web_picker_active_rows`, `test_web_providers`, `test_web_backend_capability_isolation`, `test_web_tools_config`, `test_web_providers_searxng`, `test_web_extract_robustness`) собираются, но часть их кейсов покрывает снятое. Тесты скоупа владелец решил держать целиком, поэтому файлы не тронуты — их надо подрезать точечно.
+5. **Managed-шлюз (вендорский маршрут)** жив в `tools/managed_tool_gateway.py`, `hermes_cli/nous_subscription.py` и используется другими подсистемами (image_gen, tts, transcription, modal). В резке поиска он только заглушен; снимать ли механизм целиком — отдельное решение.

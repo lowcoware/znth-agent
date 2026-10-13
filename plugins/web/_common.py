@@ -1,8 +1,8 @@
 """Shared plumbing for the bundled web-search provider plugins.
 
 Every helper resolves patched-in-tests collaborators (``get_provider_env``,
-``tools.interrupt``, ``plugins.web.keyless_mcp``, ``tools.web_tools`` client
-slots) lazily at call time so monkeypatching the source module keeps working.
+``tools.interrupt``, ``tools.web_tools`` client slots) lazily at call time so
+monkeypatching the source module keeps working.
 """
 
 from __future__ import annotations
@@ -21,11 +21,6 @@ def provider_env(name: str) -> str:
     """Config-aware env lookup (os.environ, then ~/.hermes/.env)."""
     from agent.web_search_provider import get_provider_env
     return get_provider_env(name)
-
-
-def use_keyless(name: str, api_key: str) -> bool:
-    from plugins.web.keyless_mcp import use_keyless as _use_keyless
-    return _use_keyless(name, api_key)
 
 
 def _interrupted() -> bool:
@@ -65,19 +60,6 @@ def page_error(url: str, error: str) -> dict[str, Any]:
 
 def extract_fail(urls: list[str], error: str) -> list[dict[str, Any]]:
     return [page_error(u, error) for u in urls]
-
-
-# --- Keyless ring hand-off (shared by exa / parallel / keenable) ---------------
-def keyless_search(display: str, name: str, query: str, limit: int, logger: logging.Logger) -> dict[str, Any]:
-    from plugins.web.keyless_mcp import search_with_failover
-    logger.info("%s keyless search: '%s' (limit=%d)", display, query, limit)
-    return search_with_failover(name, query, limit)
-
-
-def keyless_extract(display: str, name: str, urls: list[str], logger: logging.Logger) -> list[dict[str, Any]]:
-    from plugins.web.keyless_mcp import extract_with_failover
-    logger.info("%s keyless extract: %d URL(s)", display, len(urls))
-    return extract_with_failover(name, list(urls))
 
 
 # --- Guarded execution: interrupt check + uniform failure classification ---
@@ -201,26 +183,18 @@ def cached_sdk_client(slot: str, env_var: str, missing_key_error: str, feature: 
 
 # --- Provider base ---
 class BaseWebSearchProvider(WebSearchProvider):
-    """Subclasses set ``NAME`` / ``DISPLAY_NAME`` / ``KEY_ENV`` and flip ``EXTRACT`` / ``KEYLESS``.
-    ``is_available`` deliberately ignores the keyless tier: otherwise the legacy preference walk
-    would route users holding a key for a lower-priority backend onto this vendor's free tier.
-    ``is_keyless_available`` is True for keyless vendors unless pinned ``web.provider_tier.<name>: paid``."""
+    """Subclasses set ``NAME`` / ``DISPLAY_NAME`` / ``KEY_ENV`` and flip ``EXTRACT``."""
 
     NAME: str = ""
     DISPLAY_NAME: str = ""
     KEY_ENV: str = ""
     EXTRACT: bool = False
-    KEYLESS: bool = False
 
     name = property(lambda self: self.NAME)
     display_name = property(lambda self: self.DISPLAY_NAME)
 
     def is_available(self) -> bool:
         return bool(provider_env(self.KEY_ENV))
-
-    def is_keyless_available(self) -> bool:
-        from plugins.web.keyless_mcp import keyless_enabled, provider_tier
-        return self.KEYLESS and keyless_enabled() and provider_tier(self.NAME) != "paid"
 
     def supports_search(self) -> bool:
         return True
@@ -233,9 +207,3 @@ def setup_schema(name: str, badge: str, tag: str, key_env: str = "", prompt: str
     """``hermes tools`` picker entry; ``env_vars`` is empty when ``key_env`` is blank."""
     env_vars = [{"key": key_env, "prompt": prompt, "url": url}] if key_env else []
     return {"name": name, "badge": badge, "tag": tag, "env_vars": env_vars, **extra}
-
-
-def keyless_variant_schema(display: str, key_env: str, key_url: str, *, free_tag: str, paid_tag: str) -> dict[str, Any]:
-    """Picker entry for a keyless-ring vendor with a paid variant."""
-    paid = setup_schema(f"{display} · Paid (API key)", "paid", paid_tag, key_env, f"{display} API key", key_url, web_tier="paid")
-    return setup_schema(f"{display} · Free (keyless)", "free · no key", free_tag, web_tier="free", variants=[paid])
