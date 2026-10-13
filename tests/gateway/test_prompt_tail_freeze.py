@@ -21,8 +21,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pytest
-
 from gateway.config import GatewayConfig, HomeChannel, Platform, PlatformConfig
 from gateway.session import (
     SessionContext,
@@ -94,14 +92,6 @@ def _make_context(
         home_channels=home_channels,
         shared_multi_user_session=shared_multi_user,
     )
-
-
-@pytest.fixture(autouse=True)
-def _stable_discord_tools(monkeypatch):
-    """Pin the config/env-dependent renderer gates so key<->render parity is
-    evaluated on the same footing in every environment."""
-    monkeypatch.setattr("gateway.session._discord_tools_loaded", lambda: True)
-    monkeypatch.setattr("gateway.session._slack_tools_loaded", lambda: False)
 
 
 def _key(runner, context, redact_pii=False):

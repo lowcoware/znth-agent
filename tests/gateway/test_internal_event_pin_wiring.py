@@ -54,9 +54,7 @@ def _make_runner(
 ):
     import agent.model_metadata as mm
     import gateway.run as gr
-    import gateway.session as gs
 
-    monkeypatch.setattr(gs, "_discord_tools_loaded", lambda: True)
     monkeypatch.setattr(gr, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "fake"})
     monkeypatch.setattr(mm, "get_model_context_length", lambda *a, **k: 100_000)
 

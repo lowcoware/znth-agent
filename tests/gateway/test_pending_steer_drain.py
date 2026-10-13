@@ -14,8 +14,23 @@ from tests.gateway.test_internal_event_pin_wiring import (
     KEY,
     _capture,
     _human_source,
-    _make_runner,
+    _make_runner as _wiring_make_runner,
 )
+
+
+def _make_runner(monkeypatch):
+    """Local wrapper over the shared wiring runner.
+
+    ``test_internal_event_pin_wiring._make_runner`` still stubs the removed
+    ``gateway.session._discord_tools_loaded`` symbol; the Discord channel was
+    cut from this build, so pre-create the attribute with ``raising=False``
+    before delegating, letting its ``monkeypatch.setattr`` succeed instead of
+    raising ``AttributeError``.
+    """
+    import gateway.session as _gs
+
+    monkeypatch.setattr(_gs, "_discord_tools_loaded", lambda: True, raising=False)
+    return _wiring_make_runner(monkeypatch)
 
 
 class Adapter(BasePlatformAdapter):

@@ -1,12 +1,9 @@
 """Contract tests for gateway.platforms.media_cache — the shared mime↔ext
-dispatch — plus per-adapter parity spot-checks that hardcode each adapter's
-HISTORICAL (pre-refactor) mappings as the contract.
+dispatch.
 
-If any of these fail, an adapter's downloaded-media filenames changed —
-that's a behavioral regression, not a test to update casually.
+If any of these fail, the shared mime↔ext mappings changed — that's a
+behavioral regression, not a test to update casually.
 """
-
-import pytest
 
 from gateway.platforms.media_cache import (
     cache_media_bytes,
@@ -55,25 +52,3 @@ class TestCacheMediaBytes:
         path = cache_media_bytes(b"%PDF-1.4", "application/pdf",
                                  filename_hint="report.pdf")
         assert path.endswith("_report.pdf")
-
-# ---------------------------------------------------------------------------
-# Per-adapter parity: HISTORICAL mappings hardcoded as the contract
-# ---------------------------------------------------------------------------
-
-class TestWhatsAppCloudParity:
-    """Historical _ext_for_mime: overrides → mimetypes → None."""
-
-    CASES = {
-        # Pinned overrides (Meta-sent types the STT pipeline needs pinned).
-        "audio/ogg": ".ogg",         # NOT mimetypes' .oga
-        "audio/x-opus+ogg": ".ogg",
-        "audio/opus": ".ogg",
-        "audio/mp4": ".m4a",
-        "audio/x-m4a": ".m4a",
-        "image/jpeg": ".jpg",        # NOT the legacy .jpe
-    }
-
-    @pytest.mark.parametrize("mime,expected", sorted(CASES.items()))
-    def test_pinned_overrides(self, mime, expected):
-        from gateway.platforms.whatsapp_cloud import _ext_for_mime
-        assert _ext_for_mime(mime) == expected

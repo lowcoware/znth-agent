@@ -214,8 +214,10 @@ def test_budget_is_scoped_by_chat_and_platform(monkeypatch, runner):
 
     assert _inbound(runner, _bot(BOT_A, chat_id=OTHER_GROUP)) is True
     assert _inbound(runner, _bot(BOT_B, chat_id=OTHER_GROUP)) is True
-    monkeypatch.setenv("DISCORD_ALLOW_BOTS", "all")
+    # The Discord ``{PLATFORM}_ALLOW_BOTS`` bypass went with the Discord channel; adapter role auth
+    # admits the bot at the same gate, so the platform-scoped budget can still be asserted.
     discord_bot = SessionSource(platform=Platform.DISCORD, chat_id=GROUP_CHAT, chat_type="group", user_id=BOT_A, is_bot=True)
+    discord_bot.role_authorized = True
     assert _inbound(runner, discord_bot) is True
 
 

@@ -102,6 +102,7 @@ class SessionRecoveryMixin:
             thread_sessions_per_user=getattr(self.config, "thread_sessions_per_user", False),
             profile=self._resolve_profile_for_key(source))
 
+    @staticmethod
     def _recovered_row_matches_source_scope(
         recovered: dict[str, Any], source: SessionSource
     ) -> bool:

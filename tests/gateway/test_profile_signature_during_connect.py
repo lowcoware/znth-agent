@@ -23,7 +23,7 @@ async def test_config_saved_during_connect_is_rescanned(tmp_path, monkeypatch, s
     )
     (profile / "config.yaml").write_text("model: {default: test}\n", encoding="utf-8")
     secrets = profile / ".env"
-    secrets.write_text("DISCORD_BOT_TOKEN=discord-test\n", encoding="utf-8")
+    secrets.write_text("TELEGRAM_BOT_TOKEN=telegram-test\n", encoding="utf-8")
     runner = object.__new__(GatewayRunner)
     runner.config = GatewayConfig(multiplex_profiles=True)
     runner._running = True
@@ -48,11 +48,11 @@ async def test_config_saved_during_connect_is_rescanned(tmp_path, monkeypatch, s
 
     async def connect(adapter, platform):
         connected.append(platform)
-        if platform == Platform.DISCORD:
+        if platform == Platform.TELEGRAM:
             # Configuration was already read; a second setup operation finishes while
             # the first adapter is awaiting its transport handshake.
             secrets.write_text(
-                "DISCORD_BOT_TOKEN=discord-test\nTELEGRAM_BOT_TOKEN=telegram-test\n",
+                "TELEGRAM_BOT_TOKEN=telegram-rotated\n",
                 encoding="utf-8",
             )
         return True
@@ -66,8 +66,9 @@ async def test_config_saved_during_connect_is_rescanned(tmp_path, monkeypatch, s
         await runner._start_secondary_profile_adapters()
     else:
         await runner.reconcile_served_profiles()
-    assert connected == [Platform.DISCORD]
-    await runner.reconcile_served_profiles()
-    assert connected == [Platform.DISCORD, Platform.TELEGRAM]
-    await runner.reconcile_served_profiles()
-    assert connected == [Platform.DISCORD, Platform.TELEGRAM]
+    assert connected == [Platform.TELEGRAM]
+    # The .env rewritten mid-connect must still be pending: the next reconcile rescans the profile,
+    # comparing its signature against the one captured BEFORE the handshake.
+    assert (await runner.reconcile_served_profiles())["rescanned"] == ["worker"]
+    # Once the change is absorbed the signature is stable — no further rescan.
+    assert (await runner.reconcile_served_profiles())["rescanned"] == []

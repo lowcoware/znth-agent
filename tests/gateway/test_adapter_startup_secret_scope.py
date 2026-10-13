@@ -1,14 +1,12 @@
 """Regression tests — Slack-pattern scoped credential reads at adapter startup.
 
 Class-closure follow-up to the profile secret-scope cluster (#76462, Slack
-pattern #59739, WhatsApp ``_get_wsecret``): the 13 platform adapters below
-read credentials at ``__init__`` / availability-check / standalone-send time
-with bare ``os.getenv`` (SMS even used ``os.environ[...]``, which KeyErrors).
-Under ``gateway.multiplex_profiles`` those reads leak the default profile's
-credential into secondary profiles' adapters.
-
-Each migrated module now carries a module-level ``_get_scoped_secret`` helper
-mirroring ``gateway/platforms/whatsapp_common.py::_get_wsecret``:
+pattern #59739): adapters that read credentials at ``__init__`` /
+availability-check / standalone-send time with bare ``os.getenv`` leaked the
+default profile's credential into secondary profiles' adapters under
+``gateway.multiplex_profiles``. The channel-plugin adapters that carried this
+fix were cut from this build (only Telegram survives); the surviving live
+adapter below uses the same module-level ``_get_scoped_secret`` helper:
 
 - scope installed → scope is authoritative; scoped miss returns the default
   (NO borrow from ``os.environ``)
@@ -28,19 +26,6 @@ from agent import secret_scope as ss
 
 # (module path, representative credential env var owned by that adapter)
 MIGRATED_ADAPTER_MODULES = [
-    ("plugins.platforms.irc.adapter", "IRC_SERVER_PASSWORD"),
-    ("plugins.platforms.line.adapter", "LINE_CHANNEL_ACCESS_TOKEN"),
-    ("plugins.platforms.teams.adapter", "TEAMS_CLIENT_SECRET"),
-    ("plugins.platforms.mattermost.adapter", "MATTERMOST_TOKEN"),
-    ("plugins.platforms.ntfy.adapter", "NTFY_TOKEN"),
-    ("plugins.platforms.sms.adapter", "TWILIO_AUTH_TOKEN"),
-    ("plugins.platforms.dingtalk.adapter", "DINGTALK_CLIENT_SECRET"),
-    ("plugins.platforms.feishu.adapter", "FEISHU_APP_SECRET"),
-    ("plugins.platforms.wecom.adapter", "WECOM_SECRET"),
-    ("plugins.platforms.photon.adapter", "PHOTON_PROJECT_SECRET"),
-    ("plugins.platforms.photon.auth", "PHOTON_PROJECT_SECRET"),
-    ("plugins.platforms.buzz.adapter", "BUZZ_PRIVATE_KEY"),
-    ("gateway.platforms.bluebubbles", "BLUEBUBBLES_PASSWORD"),
     ("gateway.platforms.api_server", "API_SERVER_KEY"),
 ]
 

@@ -484,7 +484,7 @@ async def test_transient_secret_hydrate_failure_retries_through_real_start_path(
 
     monkeypatch.setattr(env_loader, "hydrate_profile_secret_sources", _flaky)
 
-    gamma_dir = _mkprofile(home, "gamma", "DISCORD_BOT_TOKEN=gamma-token\n")
+    gamma_dir = _mkprofile(home, "gamma", "TELEGRAM_BOT_TOKEN=gamma-token\n")
     with patch("hermes_cli.profiles.get_active_profile_name", return_value="default"):
         await runner._start_secondary_profile_adapters()
         assert connected == []
@@ -493,8 +493,8 @@ async def test_transient_secret_hydrate_failure_retries_through_real_start_path(
 
         result = await runner.reconcile_served_profiles()
         assert result["rescanned"] == ["gamma"]
-        assert connected == [Platform.DISCORD]
-        assert runner._profile_adapters["gamma"][Platform.DISCORD].platform == Platform.DISCORD
+        assert connected == [Platform.TELEGRAM]
+        assert runner._profile_adapters["gamma"][Platform.TELEGRAM].platform == Platform.TELEGRAM
         assert runner._served_profile_signatures["gamma"] == profile_serve_signature(gamma_dir)
 
 

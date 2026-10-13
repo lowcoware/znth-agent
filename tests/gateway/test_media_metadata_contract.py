@@ -3,12 +3,11 @@
 ``BasePlatformAdapter.send_multiple_images`` passes ``metadata=metadata``
 to ``send_image`` / ``send_image_file`` / ``send_animation`` on every send.
 An override whose signature stops at ``reply_to`` raises ``TypeError:
-send_image() got an unexpected keyword argument 'metadata'`` at runtime —
-which is exactly how image delivery broke on WhatsApp and email.
+send_image() got an unexpected keyword argument 'metadata'`` at runtime.
 
-This mirrors ``test_discord_media_metadata.py`` but covers the two
-adapters that previously slipped, plus a best-effort sweep over every
-adapter that imports cleanly so the next slip is caught at test time.
+The channel-plugin adapters this contract originally targeted (WhatsApp,
+email) were cut from this build; Telegram is the surviving live adapter the
+check now covers, so the next slip is still caught at test time.
 """
 
 from __future__ import annotations
@@ -28,13 +27,14 @@ def _accepts_metadata(method) -> bool:
     return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
-# (module, class) for the two adapters this fix targeted. These must import
+# The channel-plugin adapters this fix originally targeted (WhatsApp, email)
+# were cut from this build; Telegram is the surviving live adapter whose
+# send_image override must still accept the metadata kwarg. It must import
 # in CI, so assert directly rather than skipping.
 @pytest.mark.parametrize(
     "module_name, class_name",
     [
-        ("plugins.platforms.whatsapp.adapter", "WhatsAppAdapter"),
-        ("plugins.platforms.email.adapter", "EmailAdapter"),
+        ("plugins.platforms.telegram.adapter", "TelegramAdapter"),
     ],
 )
 def test_send_image_accepts_metadata(module_name, class_name):

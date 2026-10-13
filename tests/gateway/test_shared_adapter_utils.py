@@ -46,27 +46,3 @@ def test_bounded_put_refreshes_and_caps():
     assert list(store) == ["k2", "k3", "k4"]
     helpers.bounded_put(store, "k2", "again", cap=3)  # refresh moves it to the newest slot
     assert list(store) == ["k3", "k4", "k2"]
-
-
-def test_dedup_sites_keep_their_own_window(monkeypatch):
-    from gateway.platforms.qqbot import constants as qq
-    from plugins.platforms.photon import adapter as photon
-    from plugins.platforms.wecom import callback_adapter as wecom_cb
-
-    import plugins.platforms.line.adapter as line
-
-    windows = {
-        "qqbot": (qq.DEDUP_MAX_SIZE, qq.DEDUP_WINDOW_SECONDS),
-        "photon": (photon._DEDUP_MAX_SIZE, photon._DEDUP_WINDOW_SECONDS),
-        "wecom_callback": (2000, wecom_cb.MESSAGE_DEDUP_TTL_SECONDS),
-        "line": (1000, float("inf")),
-    }
-    # The helper honours ttl exactly: a stale id is admitted again, a fresh one is not.
-    now = [1000.0]
-    monkeypatch.setattr(helpers.time, "time", lambda: now[0])
-    for name, (cap, ttl) in windows.items():
-        d = helpers.MessageDeduplicator(max_size=cap, ttl_seconds=ttl)
-        assert d.is_duplicate("m") is False and d.is_duplicate("m") is True, name
-        now[0] += ttl if ttl != float("inf") else 10 ** 9
-        assert d.is_duplicate("m") is (ttl == float("inf")), name
-    assert line.MessageDeduplicator is helpers.MessageDeduplicator

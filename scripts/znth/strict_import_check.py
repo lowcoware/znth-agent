@@ -77,7 +77,7 @@ def main() -> int:
     for name in args.modules:
         try:
             module = importlib.import_module(name)
-        except Exception as exc:  # noqa: BLE001 - any failure is the finding
+        except Exception as exc:
             print(f"FAIL  {name}: {type(exc).__name__}: {exc}")
             failed.append(name)
             continue

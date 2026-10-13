@@ -1,15 +1,10 @@
-"""Invariants for the shared send-retry path.
+"""Invariants for the shared send-retry path (``BasePlatformAdapter._send_with_retry``).
 
-Photon used to fork ``BasePlatformAdapter._send_with_retry`` and so missed three landed fixes
-(server ``retry_after`` honoured, the inline wait cap, no failure notice inside a flood penalty).
-It now overrides two hooks. Slack and Discord parsed ``Retry-After`` by hand and only understood
-the numeric form; both now go through ``agent.retry_utils.parse_retry_after_seconds``.
+A structured refusal is final — no backoff sleep, no plain-text fallback — and a server
+``Retry-After`` hint is honoured (plus jitter) instead of the fixed exponential backoff.
 """
 
-from email.utils import format_datetime
-from datetime import datetime, timedelta, timezone, UTC
-from types import SimpleNamespace
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -74,27 +69,3 @@ async def test_server_retry_after_is_honoured_by_every_adapter(monkeypatch):
     result = await adapter._send_with_retry("c", "hello", base_delay=2.0)
     assert result.success and adapter.sent == ["hello", "hello"]
     assert slept == [7.0]
-
-
-def _http_date_in(seconds: int) -> str:
-    return format_datetime(datetime.now(UTC) + timedelta(seconds=seconds), usegmt=True)
-
-
-def test_slack_retry_after_understands_http_date():
-    from plugins.platforms.slack.adapter import SlackAdapter
-    exc = SimpleNamespace(response=SimpleNamespace(headers={"Retry-After": _http_date_in(90)}))
-    seconds = SlackAdapter._retry_after_from_exc(exc)
-    assert seconds is not None and 80 <= seconds <= 90
-    assert SlackAdapter._retry_after_from_exc(SimpleNamespace(response=None)) is None
-
-
-def test_discord_retry_after_understands_http_date_and_reset_after():
-    from plugins.platforms.discord.adapter import DiscordAdapter
-    extract = DiscordAdapter._extract_discord_retry_after
-    dated = SimpleNamespace(response=SimpleNamespace(headers={"retry-after": _http_date_in(90)}))
-    seconds = extract(dated)
-    assert seconds is not None and 80 <= seconds <= 90
-    reset = SimpleNamespace(response=SimpleNamespace(headers={"X-RateLimit-Reset-After": "0.25"}))
-    assert extract(reset) == 1.0  # floored: a sub-second hint must not hot-loop
-    assert extract(SimpleNamespace(retry_after=12)) == 12.0
-    assert extract(SimpleNamespace()) is None

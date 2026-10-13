@@ -2,6 +2,10 @@
 
 Drives the REAL ``_handle_branch_command`` against a REAL SessionStore + SessionDB (SQLite in
 tmp_path); only the platform adapter is a fake whose ``create_handoff_thread`` returns a fixed id.
+
+Telegram is the only surviving channel in this fork, and the only entry in
+``BRANCH_THREAD_PLATFORMS``, so it is the platform under test: a plain ``/branch`` opens a forum
+topic (thread) for the clone, ``/branch --here`` switches the chat in place.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ from hermes_state import AsyncSessionDB
 
 
 class _ThreadAdapter:
-    """Discord-shaped fake: the only thing /branch needs from an adapter."""
+    """Thread-capable adapter fake: the only thing /branch needs from an adapter."""
 
     def __init__(self, thread_id="777000", fail=False):
         self.thread_id, self.fail, self.calls = thread_id, fail, []
@@ -37,7 +41,7 @@ def _runner(store, adapter):
     from gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
-    runner.adapters = {Platform.DISCORD: adapter} if adapter else {}
+    runner.adapters = {Platform.TELEGRAM: adapter} if adapter else {}
     runner._profile_adapters = {}
     runner.config = {}
     runner._background_tasks = set()
@@ -53,9 +57,9 @@ def _runner(store, adapter):
     return runner
 
 
-def _discord_channel_source():
-    return SessionSource(platform=Platform.DISCORD, chat_id="123", chat_type="group", user_id="u1",
-                         user_name="ann", scope_id="g9")
+def _group_source():
+    return SessionSource(platform=Platform.TELEGRAM, chat_id="123", chat_type="group",
+                         user_id="u1", user_name="ann")
 
 
 def _seed(store, source):
@@ -67,7 +71,7 @@ def _seed(store, source):
 
 @pytest.mark.asyncio
 async def test_plain_branch_binds_new_thread_and_keeps_origin(store):
-    source = _discord_channel_source()
+    source = _group_source()
     parent = _seed(store, source)
     adapter = _ThreadAdapter()
     runner = _runner(store, adapter)
@@ -77,17 +81,17 @@ async def test_plain_branch_binds_new_thread_and_keeps_origin(store):
     assert adapter.calls == [("123", "side quest")]
     # The chat the command came from is still on the original session.
     assert store.get_or_create_session(source).session_id == parent.session_id
-    # The new thread (Discord keys it on its own id) is on the clone, with the routing columns of
-    # the THREAD, so a restart routes the next in-thread message to the branch.
-    thread_source = SessionSource(platform=Platform.DISCORD, chat_id="777000", chat_type="thread",
-                                  thread_id="777000", parent_chat_id="123", user_id="u1", scope_id="g9")
+    # The new topic is keyed on the PARENT chat id plus the topic id (Telegram's shape), with the
+    # routing columns of the thread, so a restart routes the next in-topic message to the branch.
+    thread_source = SessionSource(platform=Platform.TELEGRAM, chat_id="123", chat_type="group",
+                                  thread_id="777000", user_id="u1")
     branch = store.get_or_create_session(thread_source)
     assert branch.session_id != parent.session_id
     row = store._db.get_session(branch.session_id)
     assert (row["parent_session_id"], row["chat_id"], row["thread_id"], row["chat_type"]) == (
-        parent.session_id, "777000", "777000", "thread")
+        parent.session_id, "123", "777000", "group")
     assert [m["content"] for m in store._db.get_messages(branch.session_id)] == ["hello", "world"]
-    assert "<#777000>" in reply and parent.session_id in reply
+    assert "`777000`" in reply and parent.session_id in reply
 
 
 @pytest.mark.asyncio
@@ -97,7 +101,7 @@ async def test_plain_branch_binds_new_thread_and_keeps_origin(store):
     ("/branch side quest", None),                       # no adapter for the platform
 ])
 async def test_here_or_no_thread_branches_in_place(store, text, adapter):
-    source = _discord_channel_source()
+    source = _group_source()
     parent = _seed(store, source)
     runner = _runner(store, adapter)
 

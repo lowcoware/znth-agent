@@ -6,7 +6,6 @@ Invariants (each red on base):
 * ``rewire_plugin_handlers()`` is idempotent: a factory runs once per native client, however often
   the loaded event fires (a force re-discovery hands back NEW factory objects for the same plugin).
 * Telegram: a late plugin handler is hoisted ahead of core's catch-all ``filters.COMMAND`` handler.
-* Slack: a late ``register_slack_action_handler`` registers one Bolt listener, never two.
 * The runner subscribes at boot and re-wires every live adapter on the loop.
 """
 
@@ -111,22 +110,6 @@ def test_telegram_late_plugin_handler_precedes_core_catch_all():
     group0 = app.handlers[0]
     assert group0 == [plugin_handler] + core  # ahead of every core catch-all, core order untouched
     assert app.handlers[99] and plugin_handler not in app.handlers[99]  # the group-99 observer stays alone
-
-
-def test_slack_late_action_handler_registers_one_listener():
-    from plugins.platforms.slack.adapter import SlackAdapter
-    adapter = SlackAdapter(PlatformConfig(enabled=True, token="xoxb-t", extra={}))
-    adapter._app = MagicMock()
-    mgr = PluginManager()
-    ctx = PluginContext(manifest=PluginManifest(name="p", version="0", description=""), manager=mgr)
-    with patch("hermes_cli.plugins.get_plugin_manager", return_value=mgr):
-        adapter._register_plugin_action_handlers()  # connect
-        async def cb(ack, body, action):
-            pass
-        ctx.register_slack_action_handler("late_btn", cb)
-        adapter.rewire_plugin_handlers()
-        adapter.rewire_plugin_handlers()
-    assert [c.args[0] for c in adapter._app.action.call_args_list] == ["late_btn"]
 
 
 def test_runner_rewires_live_adapters_on_the_loop_when_plugins_load():
