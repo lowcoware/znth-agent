@@ -2871,6 +2871,10 @@ OPTIONAL_ENV_VARS = {
         "Azure Foundry base URL (set via 'hermes model' for endpoint-specific config)",
         "Azure Foundry base URL", None, password=False),
     # ── Tool API keys ──
+    "EXA_API_KEY": _tool("Exa API key for AI-native web search and contents (optional — Exa's keyless free tier works without it)", "Exa API key",
+        "https://exa.ai/", tools=["web_search", "web_extract"]),
+    "PARALLEL_API_KEY": _tool("Parallel API key for AI-native web search and extract (optional — keyless tier works without it)",
+        "Parallel API key", "https://parallel.ai/", tools=["web_search", "web_extract"]),
     "FIRECRAWL_API_KEY": _tool("Firecrawl API key for web search and scraping", "Firecrawl API key",
         "https://firecrawl.dev/", tools=["web_search", "web_extract"]),
     "FIRECRAWL_API_URL": _tool("Firecrawl API URL for self-hosted instances (optional)",
@@ -2898,6 +2902,14 @@ OPTIONAL_ENV_VARS = {
     "TOOL_GATEWAY_USER_TOKEN": _tool(
         "Explicit Nous Subscriber access token for tool-gateway requests (optional; otherwise "
         "read from the Hermes auth store)", "Tool-gateway user token", None, advanced=True),
+    "TAVILY_API_KEY": _tool(
+        "Tavily API key for AI-native web search and extract (optional — keyless works when "
+        "Tavily is selected)", "Tavily API key", "https://app.tavily.com/home",
+        tools=["web_search", "web_extract"]),
+    "KEENABLE_API_KEY": _tool(
+        "Keenable API key for fast independent-index web search and page fetch (optional — "
+        "keyless free tier works without it)", "Keenable API key", "https://keenable.ai",
+        tools=["web_search", "web_extract"]),
     "SEARXNG_URL": _tool("URL of your SearXNG instance for free self-hosted web search",
         "SearXNG URL (e.g. http://localhost:8080)", "https://searxng.github.io/searxng/",
         tools=["web_search"], password=False),

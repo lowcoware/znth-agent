@@ -406,14 +406,17 @@ async def get_toolset_config(name: str, profile: Optional[str] = None):
                 "active_provider": active_provider}
             if name == "web":
                 # Resolve active backends exactly as the web_search/web_extract dispatchers do, so badges
-                # reflect what a call would hit now. No managed route: the vendor gateway was cut
-                # together with its providers (docs/DECISIONS.md).
+                # reflect what a call would hit now — plus whether that call rides the Nous Tool Gateway
+                # or the user's own key (the managed and BYOK Firecrawl rows share one backend name).
                 try:
-                    from tools.web_tools import _get_extract_backend, _get_search_backend
+                    from plugins.web.firecrawl.provider import is_managed_route
+                    from tools.web_tools import _get_extract_backend, _get_search_backend, _managed_web_search
 
                     search_backend = _get_search_backend()
                     extract_backend = _get_extract_backend()
-                    search_managed = extract_managed = False
+                    search_managed = _managed_web_search() or (
+                        search_backend == "firecrawl" and is_managed_route("search"))
+                    extract_managed = extract_backend == "firecrawl" and is_managed_route("extract")
                 except Exception:
                     search_backend = extract_backend = None
                     search_managed = extract_managed = False

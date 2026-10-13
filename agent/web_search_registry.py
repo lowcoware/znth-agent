@@ -50,22 +50,41 @@ def _read_config_key(*path: str) -> Optional[str]:
 
 
 def _configured_backend(capability: str) -> Optional[str]:
-    """``web.<capability>_backend`` (preferred) or ``web.backend`` (shared fallback)."""
-    # impulse: the vendor-managed ``nous`` selection is gone with its providers; a stale
-    # ``web.backend: nous`` now names nothing and the availability walk decides instead.
-    return _read_config_key("web", f"{capability}_backend") or _read_config_key("web", "backend")
+    """``web.<capability>_backend`` (preferred) or ``web.backend`` (shared fallback). The managed ``nous``
+    selection names no provider: it is served by Firecrawl through the tool gateway."""
+    configured = _read_config_key("web", f"{capability}_backend") or _read_config_key("web", "backend")
+    if configured and configured.lower() == "nous":
+        # Perplexity's managed free fast search was cut (third-party key on the direct path); the
+        # managed route now always means gateway Firecrawl.
+        return "firecrawl"
+    return configured
 
 
-# Retained providers only — the rest were cut (see docs/DECISIONS.md: anything needing a third-party
-# account or key goes; local and self-hosted stays). Filtered by ``is_available()`` at walk time.
-_LEGACY_PREFERENCE = ("searxng", "ddgs")
+# Paid providers first so existing paid setups don't get downgraded to a free
+# tier on upgrade; filtered by ``is_available()`` at walk time.
+_LEGACY_PREFERENCE = ("firecrawl", "parallel", "tavily", "exa", "searxng", "ddgs")
+# ``perplexity`` and ``brave-free`` used to sit in this walk; both need a third-party API key even on
+# their free tiers, so they were cut (docs/DECISIONS.md rules keyless-only vendors in).
+
+# Anonymous public free tiers (see plugins/web/keyless_mcp.py); strictly last
+# resort, i.e. zero web credentials and no importable ddgs. Unpinned keyless
+# traffic round-robins across the ring per request; an explicit `hermes tools`
+# pick bypasses this walk. Disable with ``web.keyless_fallback: false``.
+_KEYLESS_PREFERENCE = ("exa", "parallel", "firecrawl", "keenable")
 
 
 def _keyless_preference() -> tuple:
-    """Empty on purpose: the anonymous public ring (exa / parallel / firecrawl / keenable free tiers)
-    was cut together with its vendors, so there is no keyless tier left to walk.
-    impulse: keyless tier removed — restore a ring here and in its providers if it ever comes back."""
-    return ()
+    """Keyless walk order, starting at the ring cursor in
+    :mod:`plugins.web.keyless_mcp` so resolution and dispatch agree on which
+    vendor a fresh install starts at; the rest follow in ring order."""
+    try:
+        from plugins.web.keyless_mcp import _KEYLESS_RING, _ring_cursor
+
+        start = _ring_cursor % len(_KEYLESS_RING)
+        return tuple(_KEYLESS_RING[start:] + _KEYLESS_RING[:start])
+    except Exception as exc:
+        logger.debug("keyless ring order unavailable: %s", exc)
+    return _KEYLESS_PREFERENCE
 
 
 def _resolve(configured: Optional[str], *, capability: str) -> Optional[WebSearchProvider]:
@@ -128,9 +147,15 @@ def _resolve(configured: Optional[str], *, capability: str) -> Optional[WebSearc
 
 
 def _keyless_tier_enabled() -> bool:
-    """Always False: the keyless tier was cut together with its vendors (see ``_keyless_preference``).
-    impulse: keyless tier removed — restore the ``web.keyless_fallback`` read to bring it back."""
-    return False
+    """Read ``web.keyless_fallback`` from config.yaml (default: enabled)."""
+    try:
+        from hermes_cli.config import load_config
+
+        web_cfg = load_config().get("web") or {}
+        return bool(web_cfg.get("keyless_fallback", True))
+    except Exception as exc:
+        logger.debug("keyless_fallback config read failed: %s", exc)
+        return True
 
 
 def _disabled_web_plugin_for(configured: Optional[str] = None, *, capability: Optional[str] = None) -> Optional[str]:

@@ -351,10 +351,15 @@ def _web_tier_matches(provider: dict, config: dict) -> bool:
     configured = str(tiers.get(provider["web_backend"], "") or "").lower().strip()
     if configured in ("free", "paid"):
         return configured == row_tier
-    # No keyless-row vendors are left in the tree (docs/DECISIONS.md), so an unset tier means the paid
-    # path: the "free · no key" rows that used to land here were cut with their vendors.
-    # impulse: keyless tier removed — reinstate the key probe here if a keyless row comes back.
-    return row_tier == "paid"
+    # Auto: mirror plugins.web.keyless_mcp.use_keyless — key present → paid.
+    try:
+        from agent.web_search_provider import get_provider_env
+
+        key_var = {"exa": "EXA_API_KEY", "parallel": "PARALLEL_API_KEY"}.get(provider["web_backend"])
+        has_key = bool(get_provider_env(key_var)) if key_var else False
+    except Exception:
+        has_key = False
+    return row_tier == ("paid" if has_key else "free")
 
 
 def _web_serving_backends(config: dict) -> set:
