@@ -37,23 +37,6 @@ _EXPLICIT_DISABLE_WARNED: set = set()
 # Env var(s) whose presence drives each platform's env-enable branch, named in the explicit-disable WARNING.
 _ENV_ENABLE_CREDENTIALS: dict = {
     Platform.TELEGRAM: ("TELEGRAM_BOT_TOKEN",),
-    Platform.DISCORD: ("DISCORD_BOT_TOKEN",),
-    Platform.SLACK: ("SLACK_BOT_TOKEN",),
-    Platform.WHATSAPP: ("WHATSAPP_ENABLED",),
-    Platform.WHATSAPP_CLOUD: ("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "WHATSAPP_CLOUD_ACCESS_TOKEN"),
-    Platform.SIGNAL: ("SIGNAL_HTTP_URL",),
-    Platform.MATTERMOST: ("MATTERMOST_TOKEN",),
-    Platform.MATRIX: ("MATRIX_ACCESS_TOKEN", "MATRIX_PASSWORD"),
-    Platform.EMAIL: ("EMAIL_ADDRESS", "EMAIL_PASSWORD", "EMAIL_IMAP_HOST", "EMAIL_SMTP_HOST"),
-    Platform.SMS: ("TWILIO_ACCOUNT_SID",),
-    Platform.DINGTALK: ("DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET"),
-    Platform.FEISHU: ("FEISHU_APP_ID", "FEISHU_APP_SECRET"),
-    Platform.WECOM: ("WECOM_BOT_ID", "WECOM_SECRET"),
-    Platform.WECOM_CALLBACK: ("WECOM_CALLBACK_CORP_ID", "WECOM_CALLBACK_CORP_SECRET"),
-    Platform.WEIXIN: ("WEIXIN_TOKEN", "WEIXIN_ACCOUNT_ID"),
-    Platform.BLUEBUBBLES: ("BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD"),
-    Platform.QQBOT: ("QQ_APP_ID", "QQ_CLIENT_SECRET"),
-    Platform.YUANBAO: ("YUANBAO_APP_ID", "YUANBAO_APP_SECRET"),
     Platform.RELAY: ("GATEWAY_RELAY_URL",),
 }
 
@@ -263,46 +246,6 @@ def _telegram_fallback_ips(config: GatewayConfig) -> None:
         config.platforms.setdefault(Platform.TELEGRAM, PlatformConfig()).extra["fallback_ips"] = _csv_list(ips)
 
 
-def _whatsapp(config: GatewayConfig) -> None:
-    """WhatsApp (Baileys bridge) uses a flag, not credentials. WHATSAPP_ENABLED=false overrides YAML;
-    WHATSAPP_ENABLED=true follows the credential contract — it never beats an explicit YAML disable
-    (the dashboard's disable action writes only ``platforms.whatsapp.enabled: false`` and leaves the
-    env flag on disk, #73289)."""
-    raw = getenv("WHATSAPP_ENABLED")
-    wa_cfg = config.platforms.get(Platform.WHATSAPP)
-    if wa_cfg is not None and raw.lower() in {"false", "0", "no"}:
-        wa_cfg.enabled = False
-    elif is_truthy_value(raw):
-        _enable_from_env(config, Platform.WHATSAPP)
-
-
-def _slack_home(config: GatewayConfig) -> None:
-    """SLACK_HOME_CHANNEL creates a disabled Slack entry if needed; user_id/scope_id provenance survives an unchanged chat_id."""
-    if not (slack_home := getenv("SLACK_HOME_CHANNEL")):
-        return
-    slack_config = config.platforms.setdefault(Platform.SLACK, PlatformConfig(enabled=False))
-    existing_home = slack_config.home_channel
-    same_home = existing_home is not None and existing_home.chat_id == slack_home
-    slack_config.home_channel = HomeChannel(
-        platform=Platform.SLACK, chat_id=slack_home,
-        name=getenv("SLACK_HOME_CHANNEL_NAME"), thread_id=getenv("SLACK_HOME_CHANNEL_THREAD_ID") or None,
-        user_id=existing_home.user_id if same_home else None,
-        scope_id=existing_home.scope_id if same_home else None,
-    )
-
-
-def _matrix_e2ee(config: GatewayConfig, matrix_config: PlatformConfig) -> None:
-    mode = getenv("MATRIX_E2EE_MODE").strip().lower()
-    matrix_config.extra["encryption"] = mode in ("required", "require", "optional", "prefer", "preferred") or is_truthy_value(getenv("MATRIX_ENCRYPTION"))
-    if mode:
-        matrix_config.extra["e2ee_mode"] = mode
-    _env_extras(matrix_config.extra, (("device_id", "MATRIX_DEVICE_ID"),))
-
-
-def _sms_api_key(config: GatewayConfig, sms_config: PlatformConfig) -> None:
-    sms_config.api_key = getenv("TWILIO_AUTH_TOKEN")
-
-
 def _api_server(config: GatewayConfig) -> None:
     """Require a usable key: an unauthenticated adapter refuses to start and the reconnect watcher would spin."""
     key = getenv("API_SERVER_KEY")
@@ -324,41 +267,6 @@ def _webhook(config: GatewayConfig) -> None:
         else config.platforms[Platform.WEBHOOK]
     )
     _env_extras(webhook_config.extra, (("port", "WEBHOOK_PORT", _INT), ("secret", "WEBHOOK_SECRET")))
-
-
-def _msgraph_webhook(config: GatewayConfig) -> None:
-    enabled = is_truthy_value(getenv("MSGRAPH_WEBHOOK_ENABLED"))
-    client_state = getenv("MSGRAPH_WEBHOOK_CLIENT_STATE")
-    resources = getenv("MSGRAPH_WEBHOOK_ACCEPTED_RESOURCES")
-    allowed_cidrs = getenv("MSGRAPH_WEBHOOK_ALLOWED_SOURCE_CIDRS")
-    if not (enabled or Platform.MSGRAPH_WEBHOOK in config.platforms or getenv("MSGRAPH_WEBHOOK_PORT")
-            or client_state or resources or allowed_cidrs):
-        return
-    msgraph_cfg = config.platforms.setdefault(Platform.MSGRAPH_WEBHOOK, PlatformConfig())
-    if enabled:  # same guard as webhook, but READ (don't pop) the marker: the relay pass still consults it
-        _enable_from_env(config, Platform.MSGRAPH_WEBHOOK, warn=False)
-    _env_extras(msgraph_cfg.extra, (("port", "MSGRAPH_WEBHOOK_PORT", _INT),))
-    if client_state:
-        msgraph_cfg.extra["client_state"] = client_state
-    _csv_extras(msgraph_cfg.extra, (("accepted_resources", resources), ("allowed_source_cidrs", allowed_cidrs)))
-
-
-def _qq_home(config: GatewayConfig, qq_config: PlatformConfig) -> None:
-    qq_home = getenv("QQBOT_HOME_CHANNEL").strip()
-    name_env = "QQBOT_HOME_CHANNEL_NAME"
-    if not qq_home and (qq_home := getenv("QQ_HOME_CHANNEL").strip()):
-        # Back-compat: accept the pre-rename name and warn.
-        name_env = "QQ_HOME_CHANNEL_NAME"
-        logger.warning(
-            "QQ_HOME_CHANNEL is deprecated; rename to QQBOT_HOME_CHANNEL "
-            "in your .env for consistency with the platform key."
-        )
-    if qq_home:
-        qq_config.home_channel = HomeChannel(
-            platform=Platform.QQBOT, chat_id=qq_home,
-            name=getenv("QQBOT_HOME_CHANNEL_NAME") or getenv(name_env, "Home"),
-            thread_id=getenv("QQBOT_HOME_CHANNEL_THREAD_ID") or getenv("QQ_HOME_CHANNEL_THREAD_ID") or None,
-        )
 
 
 def _plugin_probe_seed(entry) -> Optional[dict]:
@@ -513,133 +421,8 @@ _ENV_STEPS: tuple = (
     _ReplyMode(Platform.TELEGRAM, "TELEGRAM_REPLY_TO_MODE"),
     _telegram_fallback_ips,
     _Home(Platform.TELEGRAM, "TELEGRAM_HOME_CHANNEL"),
-    _Cred(Platform.DISCORD, ("DISCORD_BOT_TOKEN",), token="DISCORD_BOT_TOKEN"),
-    _Home(Platform.DISCORD, "DISCORD_HOME_CHANNEL"),
-    _ReplyMode(Platform.DISCORD, "DISCORD_REPLY_TO_MODE"),
-    _whatsapp,
-    _Home(Platform.WHATSAPP, "WHATSAPP_HOME_CHANNEL"),
-    # WhatsApp Cloud API (Meta). Distinct from the Baileys bridge; both may run against different numbers.
-    _Cred(
-        Platform.WHATSAPP_CLOUD, ("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "WHATSAPP_CLOUD_ACCESS_TOKEN"),
-        fixed=(("phone_number_id", "WHATSAPP_CLOUD_PHONE_NUMBER_ID"), ("access_token", "WHATSAPP_CLOUD_ACCESS_TOKEN")),
-        optional=(
-            ("app_id", "WHATSAPP_CLOUD_APP_ID"), ("app_secret", "WHATSAPP_CLOUD_APP_SECRET"),
-            ("waba_id", "WHATSAPP_CLOUD_WABA_ID"), ("verify_token", "WHATSAPP_CLOUD_VERIFY_TOKEN"),
-            ("webhook_host", "WHATSAPP_CLOUD_WEBHOOK_HOST"), ("webhook_port", "WHATSAPP_CLOUD_WEBHOOK_PORT", _INT),
-            ("webhook_path", "WHATSAPP_CLOUD_WEBHOOK_PATH"), ("api_version", "WHATSAPP_CLOUD_API_VERSION"),
-        ),
-    ),
-    _Home(Platform.WHATSAPP_CLOUD, "WHATSAPP_CLOUD_HOME_CHANNEL"),
-    _Cred(Platform.SLACK, ("SLACK_BOT_TOKEN",), token="SLACK_BOT_TOKEN"),
-    _slack_home,
-    _Cred(
-        Platform.SIGNAL, ("SIGNAL_HTTP_URL", "SIGNAL_ACCOUNT"),
-        fixed=(
-            ("http_url", "SIGNAL_HTTP_URL"), ("account", "SIGNAL_ACCOUNT"),
-            ("ignore_stories", "SIGNAL_IGNORE_STORIES", "true", is_truthy_value),
-        ),
-    ),
-    _Home(Platform.SIGNAL, "SIGNAL_HOME_CHANNEL"),
-    _Cred(
-        Platform.MATTERMOST, ("MATTERMOST_TOKEN",), token="MATTERMOST_TOKEN",
-        warn_missing=("MATTERMOST_URL", "MATTERMOST_TOKEN set but MATTERMOST_URL is missing"),
-        fixed=(("url", "MATTERMOST_URL"),),
-    ),
-    _Home(Platform.MATTERMOST, "MATTERMOST_HOME_CHANNEL"),
-    _Cred(
-        Platform.MATRIX, (("MATRIX_ACCESS_TOKEN", "MATRIX_PASSWORD"),), token="MATRIX_ACCESS_TOKEN",
-        warn_missing=("MATRIX_HOMESERVER", "MATRIX_ACCESS_TOKEN/MATRIX_PASSWORD set but MATRIX_HOMESERVER is missing"),
-        fixed=(("homeserver", "MATRIX_HOMESERVER"),),
-        optional=(("user_id", "MATRIX_USER_ID"), ("password", "MATRIX_PASSWORD")),
-        then=_matrix_e2ee,
-    ),
-    _Home(Platform.MATRIX, "MATRIX_HOME_ROOM"),
-    _Cred(
-        Platform.EMAIL, ("EMAIL_ADDRESS", "EMAIL_PASSWORD", "EMAIL_IMAP_HOST", "EMAIL_SMTP_HOST"),
-        fixed=(("address", "EMAIL_ADDRESS"), ("imap_host", "EMAIL_IMAP_HOST"), ("smtp_host", "EMAIL_SMTP_HOST")),
-    ),
-    _Home(Platform.EMAIL, "EMAIL_HOME_ADDRESS"),
-    _Cred(Platform.SMS, ("TWILIO_ACCOUNT_SID",), then=_sms_api_key),
-    _Home(Platform.SMS, "SMS_HOME_CHANNEL"),
     _api_server,
     _webhook,
-    _msgraph_webhook,
-    _Cred(
-        Platform.DINGTALK, ("DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET"),
-        fixed=(("client_id", "DINGTALK_CLIENT_ID"), ("client_secret", "DINGTALK_CLIENT_SECRET")),
-        home="DINGTALK_HOME_CHANNEL",
-    ),
-    _Cred(
-        Platform.FEISHU, ("FEISHU_APP_ID", "FEISHU_APP_SECRET"),
-        fixed=(
-            ("app_id", "FEISHU_APP_ID"), ("app_secret", "FEISHU_APP_SECRET"),
-            ("domain", "FEISHU_DOMAIN", "feishu"), ("connection_mode", "FEISHU_CONNECTION_MODE", "websocket"),
-        ),
-        optional=(("encrypt_key", "FEISHU_ENCRYPT_KEY"), ("verification_token", "FEISHU_VERIFICATION_TOKEN")),
-        home="FEISHU_HOME_CHANNEL",
-    ),
-    _Cred(
-        Platform.WECOM, ("WECOM_BOT_ID", "WECOM_SECRET"),
-        fixed=(("bot_id", "WECOM_BOT_ID"), ("secret", "WECOM_SECRET")),
-        optional=(("websocket_url", "WECOM_WEBSOCKET_URL"),),
-        home="WECOM_HOME_CHANNEL",
-    ),
-    _Cred(
-        Platform.WECOM_CALLBACK, ("WECOM_CALLBACK_CORP_ID", "WECOM_CALLBACK_CORP_SECRET"),
-        fixed=(
-            ("corp_id", "WECOM_CALLBACK_CORP_ID"), ("corp_secret", "WECOM_CALLBACK_CORP_SECRET"),
-            ("agent_id", "WECOM_CALLBACK_AGENT_ID"), ("token", "WECOM_CALLBACK_TOKEN"),
-            ("encoding_aes_key", "WECOM_CALLBACK_ENCODING_AES_KEY"),
-            # No host default: falsy extra.host lets the adapter's dual-stack DEFAULT_HOST=None bind v4+v6.
-            ("host", "WECOM_CALLBACK_HOST"), ("port", "WECOM_CALLBACK_PORT", "", _int_or(8645)),
-        ),
-    ),
-    # Weixin (personal WeChat via iLink Bot API)
-    _Cred(
-        Platform.WEIXIN, (("WEIXIN_TOKEN", "WEIXIN_ACCOUNT_ID"),), token="WEIXIN_TOKEN",
-        optional=(("account_id", "WEIXIN_ACCOUNT_ID"),),
-        optional_stripped=(
-            ("base_url", "WEIXIN_BASE_URL", _strip_slash), ("cdn_base_url", "WEIXIN_CDN_BASE_URL", _strip_slash),
-            ("dm_policy", "WEIXIN_DM_POLICY", str.lower), ("group_policy", "WEIXIN_GROUP_POLICY", str.lower),
-            ("allow_from", "WEIXIN_ALLOWED_USERS"), ("group_allow_from", "WEIXIN_GROUP_ALLOWED_USERS"),
-            ("split_multiline_messages", "WEIXIN_SPLIT_MULTILINE_MESSAGES"),
-        ),
-        home="WEIXIN_HOME_CHANNEL", home_strip=True,
-    ),
-    # BlueBubbles (iMessage). ``require_mention`` is always written: an unset env reads as "" → False.
-    _Cred(
-        Platform.BLUEBUBBLES, ("BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD"),
-        fixed=(
-            ("server_url", "BLUEBUBBLES_SERVER_URL", "", _strip_slash), ("password", "BLUEBUBBLES_PASSWORD"),
-            ("webhook_host", "BLUEBUBBLES_WEBHOOK_HOST", "127.0.0.1"),
-            ("webhook_port", "BLUEBUBBLES_WEBHOOK_PORT", "", _int_or(8645)),
-            ("webhook_path", "BLUEBUBBLES_WEBHOOK_PATH", "/bluebubbles-webhook"),
-            ("send_read_receipts", "BLUEBUBBLES_SEND_READ_RECEIPTS", "true", is_truthy_value),
-            ("require_mention", "BLUEBUBBLES_REQUIRE_MENTION", "", _truthy_token),
-        ),
-        optional=(("mention_patterns", "BLUEBUBBLES_MENTION_PATTERNS", _mention_patterns),),
-    ),
-    _Home(Platform.BLUEBUBBLES, "BLUEBUBBLES_HOME_CHANNEL"),
-    # QQ (Official Bot API v2)
-    _Cred(
-        Platform.QQBOT, (("QQ_APP_ID", "QQ_CLIENT_SECRET"),),
-        optional=(("app_id", "QQ_APP_ID"), ("client_secret", "QQ_CLIENT_SECRET")),
-        optional_stripped=(("allow_from", "QQ_ALLOWED_USERS"), ("group_allow_from", "QQ_GROUP_ALLOWED_USERS")),
-        then=_qq_home,
-    ),
-    # Yuanbao — YUANBAO_APP_ID preferred over the legacy YUANBAO_APP_KEY
-    _Cred(
-        Platform.YUANBAO, (("YUANBAO_APP_ID", "YUANBAO_APP_KEY"), "YUANBAO_APP_SECRET"),
-        fixed=(("app_id", ("YUANBAO_APP_ID", "YUANBAO_APP_KEY")), ("app_secret", "YUANBAO_APP_SECRET")),
-        optional=(
-            ("bot_id", "YUANBAO_BOT_ID"), ("ws_url", "YUANBAO_WS_URL"),
-            ("api_domain", "YUANBAO_API_DOMAIN"), ("route_env", "YUANBAO_ROUTE_ENV"),
-            ("dm_policy", "YUANBAO_DM_POLICY", _strip_lower), ("dm_allow_from", "YUANBAO_DM_ALLOW_FROM"),
-            ("group_policy", "YUANBAO_GROUP_POLICY", _strip_lower), ("group_allow_from", "YUANBAO_GROUP_ALLOW_FROM"),
-        ),
-        home="YUANBAO_HOME_CHANNEL",
-    ),
-
     _enable_plugin_platforms_from_env,
     _relay,
     _scrub_explicit_markers,
