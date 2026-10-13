@@ -50,8 +50,13 @@ permissions:
 # cancelled: its group is github.run_id. PRs collapse per-PR; pushes use the
 # ref as before.
 concurrency:
-  group: ci-${{ inputs.release == true && github.run_id || (github.event_name == 'pull_request' && github.event.pull_request.number || github.ref) }}
-  cancel-in-progress: ${{ inputs.release != true && github.event_name == 'pull_request' }}
+  # ``inputs`` does not exist on a push event: referencing it there makes GitHub treat the whole
+  # workflow as invalid — the run is created with ZERO jobs, stays pending, then gets cancelled by
+  # the next push ("its workflow file may be broken" on rerun). Kept semantics without it: a PR
+  # collapses per PR, a release run (workflow_call) owns its run_id and is never cancelled by a
+  # later commit, a push uses the ref.
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || (github.event_name == 'workflow_call' && github.run_id) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────
