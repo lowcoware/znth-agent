@@ -12,13 +12,12 @@ from agent.secret_scope import get_secret
 logger = logging.getLogger(__name__)
 
 from tools.send_message_targets import (
-    _HOME_CHANNEL_ENV_OVERRIDES, _SLACK_USER_ID_RE, resolve_send_target, unknown_platform_error,
+    _HOME_CHANNEL_ENV_OVERRIDES, resolve_send_target, unknown_platform_error,
 )
 from tools.send_message_senders import (
     _AUDIO_EXTS, _DEFAULT_CAPTION_LIMIT, _IMAGE_EXTS, _NO_DELIVERABLE, _VIDEO_EXTS, _VOICE_EXTS,
     _adapter_media_method, _error, _live_adapter, _media_caption_split, _plugin_standalone_sender,
-    _registry_standalone_send, _resolve_slack_user_target, _sanitize_error_text, _send_bluebubbles,
-    _send_qqbot, _send_signal, _send_telegram, _send_weixin, _send_yuanbao)
+    _registry_standalone_send, _sanitize_error_text, _send_telegram)
 from tools.registry import tool_error
 
 # NOTE: ``send_message`` is intentionally NOT registered as an agent-callable model tool
@@ -242,23 +241,10 @@ def _handle_send(args):
             return tool_error(err)
     if duplicate_skip := _maybe_skip_cron_duplicate_send(platform_name, chat_id, thread_id):
         return json.dumps(duplicate_skip)
-    # Slack: resolve user targets to DM channel IDs before sending. _parse_target_ref emits internal
-    # ``user:U...`` / ``user_name:@handle`` targets; a bare U... id can also arrive from session metadata or
-    # the home-channel config. All are opened via conversations.open (fixes #19236).
-    if platform_name == "slack" and chat_id:
-        chat_id, resolve_err = _slack_dm_chat_id(pconfig, chat_id)
-        if resolve_err:
-            return json.dumps(resolve_err)
-    # POSITION IS LOAD-BEARING — this must stay BELOW Slack user→DM resolution.
-    # `_parse_target_ref` emits internal pseudo-ids (`user_name:ben`,
-    # `user:U...`) that no provenance can ever contain, because provenances
-    # record RESOLVED conversation ids. Authorizing above the resolver compared
-    # a handle against a set of `D...` ids and refused every Slack DM — a fix
-    # that caused the outage it was meant to prevent. Pinned by
-    # test_slack_user_targets_resolve_then_authorize; moving this call back up
-    # turns those cases red.
-    # thread_id is part of the DESTINATION: on Discord the thread is the literal
-    # REST target, so an attested parent must not vouch for an arbitrary thread.
+    # Slack user→DM resolution (``user:U...`` / ``user_name:@handle`` via conversations.open) lived
+    # here; it went with the Slack channel. Targets now arrive already resolved.
+    # Authorization must still run before any send, and thread_id stays part of the DESTINATION:
+    # an attested parent conversation must not vouch for an arbitrary thread.
     _relay_denial = _authorize_relay_target(platform_name, chat_id, thread_id,
                                             native_token=getattr(pconfig, "token", None))
     if _relay_denial:
@@ -318,7 +304,7 @@ def _resolve_platform_config(platform_name, config):
         return None, None, None, err
     pconfig = config.platforms.get(platform)
     if not pconfig or not pconfig.enabled:
-        pconfig = _weixin_env_pconfig() if platform_name == "weixin" else None
+        pconfig = None
     if pconfig is None:
         return None, None, None, _not_configured_error(platform_name, platform, entry)
     return platform, pconfig, entry, None
@@ -393,29 +379,14 @@ def _secret_sources_state(user_config):
 
 
 def _home_chat_id(config, platform, platform_name):
-    """``(home chat_id, None)`` or ``(None, actionable error)``; Weixin also honours WEIXIN_HOME_CHANNEL."""
+    """``(home chat_id, None)`` or ``(None, actionable error)``."""
     home = config.get_home_channel(platform)
     if home:
         return home.chat_id, None
-    # Home channel is a per-profile target like the token beside it: a raw environ read would post a
-    # multiplexed secondary's message into the default profile's Weixin chat.
-    wx_home = (get_secret("WEIXIN_HOME_CHANNEL", "") or "").strip() if platform_name == "weixin" else ""
-    if wx_home:
-        return wx_home, None
     home_env = _HOME_CHANNEL_ENV_OVERRIDES.get(platform_name, f"{platform_name.upper()}_HOME_CHANNEL")
     return None, (f"No home channel set for {platform_name} to determine where to send the message. "
                   f"Either specify a channel directly with '{platform_name}:CHANNEL_NAME', "
                   f"or set a home channel via: hermes config set {home_env} <channel_id>")
-
-
-def _slack_dm_chat_id(pconfig, chat_id):
-    """Open Slack user targets (``user:``/``user_name:`` from the parser, or a bare U... id from
-    session metadata / home-channel config) as DM conversations. ``(chat_id, None)`` or ``(None, error_dict)``."""
-    dm_target = f"user:{chat_id}" if chat_id.startswith("U") and _SLACK_USER_ID_RE.fullmatch(chat_id) else chat_id
-    if not dm_target.startswith(("user:", "user_name:")):
-        return chat_id, None
-    from model_tools import _run_async
-    return _run_async(_resolve_slack_user_target(pconfig.token, dm_target))
 
 
 def _mirror_sent_message(platform_name, chat_id, mirror_text, thread_id):
@@ -429,18 +400,6 @@ def _mirror_sent_message(platform_name, chat_id, mirror_text, thread_id):
             user_id=get_session_env("HERMES_SESSION_USER_ID", "") or None))
     except Exception:
         return False
-
-
-def _weixin_env_pconfig():
-    """Synthesize a Weixin PlatformConfig from .env secrets, or None."""
-    wx_token = get_secret("WEIXIN_TOKEN", "").strip()
-    wx_account = get_secret("WEIXIN_ACCOUNT_ID", "").strip()
-    if not (wx_token and wx_account):
-        return None
-    from gateway.config import PlatformConfig
-    return PlatformConfig(enabled=True, token=wx_token, extra={
-        "account_id": wx_account, "base_url": get_secret("WEIXIN_BASE_URL", "").strip(),
-        "cdn_base_url": get_secret("WEIXIN_CDN_BASE_URL", "").strip()})
 
 
 def _describe_media_for_mirror(media_files):
@@ -603,15 +562,9 @@ async def _send_chunks(chunks, send_one):
 
 
 def _platform_max_length(platform):
-    """Chunking limit: Signal's adapter constant (its raw JSON-RPC path bypasses the adapter's
-    chunking), the registry's ``max_message_length`` for plugins, else None (no chunking)."""
-    from gateway.config import Platform
-    if platform == Platform.SIGNAL:
-        try:
-            from gateway.platforms.signal import MAX_MESSAGE_LENGTH
-            return MAX_MESSAGE_LENGTH
-        except ImportError:
-            return 8000
+    """Chunking limit from the registry (``max_message_length``) for plugin platforms, else None
+    (no chunking). Telegram chunks internally."""
+    from gateway.config import Platform  # noqa: F401  (kept for callers that pass a Platform)
     try:
         from gateway.platform_registry import platform_registry
         entry = platform_registry.get(platform.value)
@@ -620,12 +573,13 @@ def _platform_max_length(platform):
         return None
 
 
-# Plugin platforms whose media (Discord: all) sends deliberately bypass the live adapter for the
-# registry ``standalone_sender_fn`` (Discord: forums/threads/multipart; Slack: files_upload_v2;
-# WhatsApp: Baileys /send-media). platform -> (error label, run discover_plugins first,
-# caption-capable, media_files sentinel for non-final chunks, forward force_document)
-_PLUGIN_STANDALONE_MEDIA = {"discord": ("Discord", False, True, [], False), "feishu": ("Feishu", True, False, None, False),
-                            "slack": ("Slack", True, True, [], False), "whatsapp": ("WhatsApp", True, True, None, True)}
+# Plugin platforms whose media sends deliberately bypass the live adapter for the registry
+# ``standalone_sender_fn``. Empty by design: the four keyed channels (Discord, Feishu, Slack,
+# WhatsApp) were cut — Telegram is the only channel left (docs/DECISIONS.md). A channel plugged
+# back in re-adds its row here; the mechanism below stays.
+# platform -> (error label, run discover_plugins first, caption-capable, media_files sentinel for
+# non-final chunks, forward force_document)
+_PLUGIN_STANDALONE_MEDIA = {}
 
 
 async def _send_plugin_standalone(platform_name, pconfig, chat_id, message, chunks, media_files, *, thread_id,
@@ -659,37 +613,28 @@ def _via_adapter_route(p, pc, cid, chunk, media, tid, fd):
 
 
 # Native-media chunked routes for built-in platforms; media rides on the final chunk, non-final
-# chunks get the sentinel. platform -> (media required, sentinel, sender(platform, pconfig,
-# chat_id, chunk, media, thread_id, force_document)). Matrix: ALL sends use the native adapter
-# (E2EE text). Signal: attachments ride the JSON-RPC param. Yuanbao / WeCom: media needs the
-# running gateway. Slack text: live adapter (multi-workspace, ignored_channels gates) else the
-# plugin's standalone sender. Names resolve at call time so tests can monkeypatch ``_send_signal``.
-_CHUNKED_ROUTES = {
-    "signal": (True, [], lambda p, pc, cid, chunk, media, tid, fd: _send_signal(
-        pc.extra, cid, chunk, media_files=media)),
-    "yuanbao": (True, None, lambda p, pc, cid, chunk, media, tid, fd: _send_yuanbao(cid, chunk, media_files=media))}
+# chunks get the sentinel. Empty by design: every built-in platform that needed a native route
+# (Signal, Yuanbao, Matrix, WeCom) was cut — Telegram chunks itself inside ``_send_telegram``.
+# A platform plugged back in re-adds its row: platform -> (media required, sentinel,
+# sender(platform, pconfig, chat_id, chunk, media, thread_id, force_document)).
+_CHUNKED_ROUTES = {}
 
-# Text-only senders for built-in platforms (generic path; media is dropped with a
-# warning). Signature: (pconfig, chat_id, chunk, thread_id) -> result.
-_TEXT_SENDERS = {
-    "signal": lambda pc, cid, chunk, tid: _send_signal(pc.extra, cid, chunk),
-    "bluebubbles": lambda pc, cid, chunk, tid: _send_bluebubbles(pc.extra, cid, chunk),
-    "qqbot": lambda pc, cid, chunk, tid: _send_qqbot(pc, cid, chunk),
-    "yuanbao": lambda pc, cid, chunk, tid: _send_yuanbao(cid, chunk)}
+# Text-only senders for built-in platforms (generic path; media is dropped with a warning).
+# Empty by design, same reason as ``_CHUNKED_ROUTES`` (Signal, BlueBubbles, QQ Bot, Yuanbao).
+# Signature: (pconfig, chat_id, chunk, thread_id) -> result.
+_TEXT_SENDERS = {}
 
-_MEDIA_PLATFORMS_NOTE = "telegram, weixin, signal, yuanbao and qqbot"
+_MEDIA_PLATFORMS_NOTE = "telegram"
 
 
 async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None,
                             force_document=False, mentions=None, args=None):
     """Route to the platform sender, chunking long text with the adapters' splitter. Order matters:
-    Weixin first (its native helper must not be blocked by unrelated optional imports such as
-    lark-oapi), Telegram (chunks itself), plugin standalone media, native chunked, generic text."""
-    from gateway.config import Platform
+    Telegram first (it chunks its own *formatted* text), then plugin standalone media, native
+    chunked routes, generic text (registry handler or live adapter)."""
+    from gateway.config import Platform  # noqa: F401  (callers pass a Platform; kept for parity)
     platform_name = platform.value if hasattr(platform, "value") else str(platform)
     media_files = media_files or []
-    if platform == Platform.WEIXIN:
-        return await _send_weixin(pconfig, chat_id, message, media_files=media_files)
     # Telegram chunks internally on the *formatted* text (escaping inflates length).
     if platform == Platform.TELEGRAM:
         return await _send_telegram(
@@ -698,8 +643,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     from gateway.platforms.base import BasePlatformAdapter
     max_len = _platform_max_length(platform)
     chunks = BasePlatformAdapter.truncate_message(message, max_len) if max_len else [message]
-    if (platform_name == "discord" or (platform_name == "whatsapp" and mentions)
-            or (media_files and platform_name in _PLUGIN_STANDALONE_MEDIA)):
+    if media_files and platform_name in _PLUGIN_STANDALONE_MEDIA:
         return await _send_plugin_standalone(platform_name, pconfig, chat_id, message, chunks, media_files,
                                              thread_id=thread_id, max_len=max_len, force_document=force_document,
                                              mentions=mentions)
@@ -709,27 +653,9 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
         return await _send_chunks(chunks, lambda chunk, is_last: sender(
             platform, pconfig, chat_id, chunk, media_files if is_last else empty_media, thread_id, force_document))
 
-    # --- QQ Bot: native media via REST upload + MSG_TYPE_MEDIA (issue #37315).
-    # Guild channels are unsupported for native media (same as QQBotAdapter);
-    # C2C / group use /v2/{users|groups}/{id}/files then .../messages.
-    if platform == Platform.QQBOT and media_files:
-        qq_caption, _ = _media_caption_split(
-            message, media_files, max_caption_len=(max_len or _DEFAULT_CAPTION_LIMIT))
-        if qq_caption is not None:
-            return await _send_qqbot(pconfig, chat_id, "", media_files=media_files, caption=qq_caption)
-        last_result = None
-        for i, chunk in enumerate(chunks):
-            is_last = (i == len(chunks) - 1)
-            result = await _send_qqbot(
-                pconfig, chat_id, chunk, media_files=media_files if is_last else None)
-            if isinstance(result, dict) and result.get("error"):
-                return result
-            last_result = result
-        return last_result
-
-    # Generic path: text only. Buzz delivers media natively via _send_via_adapter, so no warning.
+    # Generic path: text only. Media needs a native route above or the platform's own handler.
     warning = None
-    if media_files and platform_name != "buzz":
+    if media_files:
         if not message.strip():
             return {"error": (f"send_message MEDIA delivery is currently only supported for {_MEDIA_PLATFORMS_NOTE}; "
                               f"target {platform_name} had only media attachments")}
